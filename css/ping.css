@@ -42,7 +42,6 @@ code{font-family:var(--mono);font-size:.92em;color:var(--accent-hi);}
 .small{font-size:.72rem;line-height:1.55;}
 .accent{color:var(--accent);}
 .spacer{flex:1;}
-.statusbar .spacer{flex:1 1 auto;min-width:8px;}
 
 ::-webkit-scrollbar{width:8px;height:8px;}
 ::-webkit-scrollbar-track{background:transparent;}
@@ -97,6 +96,14 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .notice[hidden]{display:none;}
 .notice.warn{color:var(--accent-hi);border-color:var(--accent-dim);background:var(--accent-faint);}
 .notice.err{color:#fca5a5;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.07);}
+
+/* ---- connection strip ----
+   One line: what the link is, measured before the run. Replaces the footer
+   that used to carry the baselines. */
+.strip.conn{gap:14px;}
+.cfield{display:flex;align-items:baseline;gap:6px;min-width:0;font-family:var(--mono);font-size:.68rem;}
+.cfield i{font-style:normal;font-size:.55rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
+.cfield b{color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22ch;}
 
 /* ---- headline tiles ---- */
 .tiles{flex-shrink:0;display:grid;grid-template-columns:repeat(7,1fr);gap:var(--gap);}
@@ -178,21 +185,6 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .empty{padding:18px 10px;text-align:center;color:var(--text-muted);font-size:.74rem;}
 .empty[hidden]{display:none;}
 
-/* ---- status bar ---- */
-/* Items never wrap (a broken "STUN 15.3 / ms" reads badly), so the bar itself
-   scrolls when the numbers outgrow a narrow screen rather than widening the
-   page — at 360px the nowrap alone pushed the document to 362px. */
-.statusbar{flex-shrink:0;display:flex;align-items:center;gap:9px;padding:2px 2px 0;
-  font-family:var(--mono);font-size:.64rem;color:var(--text-muted);min-height:26px;
-  min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;}
-.statusbar::-webkit-scrollbar{display:none;}
-.statusbar > *{flex:0 0 auto;}
-.sb-item{white-space:nowrap;}
-.sb-item i{font-style:normal;letter-spacing:.07em;text-transform:uppercase;font-size:.57rem;}
-.sb-item b{color:var(--accent);font-weight:700;}
-.sb-sep{color:#333;}
-.sb-note{font-size:.6rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
 /* ---- method dialog ---- */
 .dlg{border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);
   width:min(760px,calc(100vw - 32px));max-height:min(80dvh,760px);padding:0;
@@ -210,6 +202,16 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .dlg-body li::before{content:'';position:absolute;left:0;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--accent);}
 .dlg-body strong{color:var(--text);font-weight:600;}
 .dlg-body em{color:var(--accent-hi);font-style:normal;}
+/* The ICMP-vs-this-tool table is the whole argument of the dialog, so it gets
+   real table styling rather than being squeezed into a paragraph. */
+.dlg-body table.cmp{width:100%;border-collapse:collapse;margin:10px 0 12px;font-family:var(--mono);font-size:.72rem;}
+.dlg-body table.cmp th{text-align:left;font-size:.56rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-muted);border-bottom:1px solid var(--border);padding:5px 8px;font-weight:600;}
+.dlg-body table.cmp td{padding:5px 8px;border-bottom:1px solid #141414;color:var(--text-sec);}
+.dlg-body table.cmp td:first-child{color:var(--text);}
+.dlg-body table.cmp td.ok{color:var(--ok);}
+.dlg-body table.cmp td.warn{color:var(--accent-hi);}
+.dlg-body table.cmp td.bad{color:var(--err);font-weight:700;}
 
 /* ---- narrow ----
 
@@ -247,11 +249,15 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .tiles::-webkit-scrollbar{display:none;}
   .stat-tile{flex:0 0 118px;}
   .strip .path{max-width:none;}
+  /* Six labelled readouts will not fit a phone; the strip scrolls sideways
+     rather than growing three rows tall and eating the chart. */
+  .strip.conn{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+  .strip.conn::-webkit-scrollbar{display:none;}
+  .strip.conn > *{flex:0 0 auto;}
   .lhead .c-ph,.lrow .c-ph{display:none;}
   .lhead,.lrow{grid-template-columns:40px 66px minmax(84px,1fr) 74px 100px;}
   .verdict{font-size:.74rem;padding:7px 10px;}
-  .sb-note{display:none;}
-}
+  }
 @media (max-width:520px){
   .lhead,.lrow{grid-template-columns:60px minmax(74px,1fr) 70px 88px;}
   .lhead .c-seq,.lrow .c-seq{display:none;}
@@ -298,8 +304,7 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 }
 @media (max-height:460px){
   .verdict{display:none;}
-  .statusbar{min-height:22px;font-size:.6rem;}
-  .strip{padding:5px 9px;}
+    .strip{padding:5px 9px;}
   .field{height:28px;}
   .chartpane{min-height:60px;}
   .logpane{min-height:54px;}

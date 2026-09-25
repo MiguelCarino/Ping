@@ -1,13 +1,14 @@
-/* export.js — CSV, XLSX, ODS and a PDF report, from vendored libraries only.
+/* export.js — the complete per-sample record, as CSV, XLSX or ODS.
 
-   The fleet does not load script from a CDN, so SheetJS and jsPDF live in
-   ./vendor and are loaded on demand: a page that never exports never pays the
-   1.3 MB. The previous version pulled both (plus Tailwind and Chart.js) on
-   every single load, whether or not anyone pressed a button.
+   This is the full log: every probe, with its phase split. The *report*
+   (report.js) deliberately prints only the distribution and the extremes,
+   because nobody reads sample 300 of 500 — so these three formats are where
+   the raw record lives, and the report points at them.
 
-   The exported rows carry the phase columns too. An export that only says
-   "142 ms" throws away the one thing that makes the reading actionable —
-   whether those 142 ms were DNS, the TLS handshake, or the path itself. */
+   CSV needs no library at all. SheetJS is vendored and loaded on demand, so a
+   page view that never exports a spreadsheet never pays for it. jsPDF is gone
+   entirely: the report is HTML that the browser prints, which is how Topo does
+   it, and dropping the dependency took ~900 kB of vendored script with it. */
 
 const loaded = new Set();
 
@@ -72,84 +73,4 @@ export async function exportSheet(log, format /* 'xlsx' | 'ods' */) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Latency');
   XLSX.writeFile(wb, `carino-ping-${stamp()}.${format}`, { bookType: format });
-}
-
-/**
- * The PDF report. Written as a document someone can hand to a provider, so it
- * states the method and its limits on the page rather than implying a browser
- * measured ICMP. The old report asserted "routing and connection stability
- * appear nominal" off a mean that counted no failures at all.
- */
-export async function exportPDF(log, { summary, perTarget, method, verdict }) {
-  await loadScript('vendor/jspdf.umd.min.js');
-  await loadScript('vendor/jspdf.plugin.autotable.min.js');
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const GOLD = [234, 179, 8];
-  const M = 14;
-  let y = 20;
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-  doc.text('Carino Ping — latency report', M, y);
-  y += 7;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110);
-  doc.text(`Generated ${new Date().toLocaleString()} · ping.carino.systems`, M, y);
-  y += 10;
-
-  doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-  doc.text('Summary', M, y); y += 6;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  const f = (v, u = ' ms') => (v == null ? '—' : v.toFixed(1) + u);
-  const lines = [
-    `Targets: ${summary.targets}   Requests sent: ${summary.sent}   Lost: ${summary.lost} (${summary.loss.toFixed(1)}%)`,
-    `Best (min): ${f(summary.min)}    Median (p50): ${f(summary.p50)}    95th percentile: ${f(summary.p95)}`,
-    `Worst: ${f(summary.max)}    Jitter: ${f(summary.jitter)}`,
-  ];
-  for (const l of lines) { doc.text(l, M, y); y += 5.5; }
-  y += 2;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Assessment', M, y); y += 5.5;
-  doc.setFont('helvetica', 'normal');
-  for (const l of doc.splitTextToSize(verdict, 182)) { doc.text(l, M, y); y += 5; }
-  y += 3;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Method and limits', M, y); y += 5.5;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(90);
-  for (const l of doc.splitTextToSize(method, 182)) { doc.text(l, M, y); y += 4; }
-  doc.setTextColor(0); doc.setFontSize(10);
-  y += 4;
-
-  doc.autoTable({
-    startY: y,
-    head: [['Target', 'Sent', 'Loss %', 'Min', 'p50', 'p95', 'Max', 'Jitter', 'Timing']],
-    body: perTarget.map((t) => [
-      t.label, t.sent, t.loss.toFixed(1),
-      f(t.min, ''), f(t.p50, ''), f(t.p95, ''), f(t.max, ''), f(t.jitter, ''),
-      t.detail ? 'TTFB' : 'total only',
-    ]),
-    theme: 'grid',
-    headStyles: { fillColor: GOLD, textColor: [0, 0, 0], fontStyle: 'bold' },
-    styles: { fontSize: 8, cellPadding: 1.8 },
-    margin: { left: M, right: M },
-  });
-
-  doc.autoTable({
-    startY: doc.lastAutoTable.finalY + 8,
-    head: [COLUMNS],
-    body: toRows(log),
-    theme: 'striped',
-    headStyles: { fillColor: GOLD, textColor: [0, 0, 0], fontStyle: 'bold' },
-    styles: { fontSize: 6.5, cellPadding: 1.1 },
-    margin: { left: M, right: M },
-  });
-
-  const pages = doc.internal.getNumberOfPages();
-  for (let p = 1; p <= pages; p++) {
-    doc.setPage(p);
-    doc.setFontSize(7.5); doc.setTextColor(140);
-    doc.text(`Carino Systems · page ${p} of ${pages}`, M, doc.internal.pageSize.getHeight() - 8);
-  }
-  doc.save(`carino-ping-${stamp()}.pdf`);
 }

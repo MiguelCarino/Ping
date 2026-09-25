@@ -19,17 +19,57 @@ Statistics are **min / p50 / p95 / max, jitter (RFC 3550 mean absolute successiv
 
 **An IP address is not an ICMP ping.** A few answer — `8.8.8.8`, `1.1.1.1` and `9.9.9.9` serve HTTPS with certificates valid for the address, so they return a real number, but it is their web server's round trip rather than the address's reachability. Most other addresses have no HTTPS listener or no certificate for the literal and come back unreachable, which says nothing about whether the host is up.
 
+## Does it agree with `ping`?
+
+Mostly, and where it does not the reason is knowable. Measured on one machine, one network, the same minute:
+
+| Host | ICMP min / avg | This tool | |
+|---|---|---|---|
+| carino.systems | 40.6 / 42.2 ms | 43 ms | agrees |
+| github.com | 96.3 / 98.4 ms | 102 ms | agrees |
+| cloudflare.com | 4.9 / 7.0 ms | 34 ms | **5x** |
+| www.cloudflare.com | 4.9 / 7.0 ms | 22 ms | better |
+
+The first two match ICMP to within a few percent. The third does not, and the measurement is not at fault: `cloudflare.com/favicon.ico` answers **301** and redirects to `www.cloudflare.com`. The browser follows it, so every probe pays a second request to a second host — a fresh DNS lookup, TCP handshake and TLS handshake the first time, and an extra round trip every time after.
+
+So when a reading looks too high, in order of likelihood:
+
+1. **The target redirects.** Check with `curl -sI https://host/path`; probe the URL it points at.
+2. **The figure is a total, not TTFB**, because the server sends no `Timing-Allow-Origin` — so it includes the server's own think time and the transfer. Those rows are marked *total only*.
+3. **ICMP and HTTPS need not reach the same machine.** An echo request is answered by the kernel of the first anycast node that sees it; an HTTPS request has to reach something that can serve the path, which on a CDN can be a different city.
+
+## Connection, measured before the run
+
+Pressing **Start** measures the line first and only then begins probing. That ordering is the point: a saturated link has a full queue, and a full queue adds delay to everything behind it, so testing bandwidth *during* a latency run would not measure "latency under load" — it would corrupt every sample taken in it.
+
+- **Downlink** — six parallel streams of CDN assets, bytes read back from `encodedBodySize` on the Resource Timing entries (exposed because cdnjs sends `Timing-Allow-Origin`). Slow start is discarded. A lower bound on the line, not a substitute for a speed test against a nearby server, and the UI says so.
+- **STUN round trip** — one UDP exchange, no TLS, no server-side work. The floor to compare HTTP readings against.
+- **Public address** — falls out of the same STUN exchange; a server-reflexive candidate *is* the address the server saw.
+- **Client identifier** — a random `CP-xxxx-xxxx` kept in local storage so several reports from the same laptop can be told apart. Not a fingerprint, not derived from hardware, cleared with site data.
+
+### Why it cannot name your network interface
+
+There is no web API for it, and that is deliberate rather than missing. Chrome and Firefox replace WebRTC host candidates with a random `<uuid>.local` mDNS name precisely so a page cannot enumerate the network it is on. `navigator.connection.type` is the nearest thing and only Chromium on Android and ChromeOS populates it; on desktop it is undefined, and Firefox and Safari do not ship the API at all. The Interface field reads **not published** rather than guessing from the effective type.
+
 ## Using it
 
 Static site, no build step — serve the folder or open it on GitHub Pages.
 
-Enter comma-separated hostnames, pick an interval and a timeout, press **Start**. Each target runs its own self-correcting loop: the next wait is measured from when the last probe *began*, and a target never has two probes outstanding, so a 500 ms interval against a 900 ms host degrades to back-to-back probes rather than piling up a queue and measuring itself.
+Enter comma-separated hostnames, pick an interval, press **Start**. Each target runs its own self-correcting loop: the next wait is measured from when the last probe *began*, and a target never has two probes outstanding, so a 500 ms interval against a 900 ms host degrades to back-to-back probes rather than piling up a queue and measuring itself.
 
 The probe path defaults to `/favicon.ico` — small, present almost everywhere, and cheap to serve. Point it at a health endpoint instead if you have one.
 
 Background tabs are paused by default: browsers clamp timers to roughly one second there, so readings taken in a hidden tab measure the throttle rather than the network. The checkbox overrides it for a deliberate long run.
 
-Exports: **CSV** (no library), **XLSX**/**ODS** (SheetJS) and a **PDF report** (jsPDF) that states the method and its limits on the page, with per-target and per-sample tables. Every export carries the phase columns, not just the totals.
+**One timer, not two.** A separate timeout selector asked the reader to reason about the relationship between "how often" and "how long before I give up", which has one sensible answer. The timeout is three intervals clamped to 2–10 s, and the interval control's tooltip says what that works out to.
+
+## Exports and the report
+
+**CSV / XLSX / ODS** carry the complete per-sample record, phase columns included. CSV needs no library; SheetJS is vendored and loaded only when one of those buttons is pressed.
+
+**Report** opens a standalone HTML document in a new tab with a Print / Save as PDF button — the same approach Topo takes, and for the same reason: turning HTML into a PDF is the browser's job, so there is no PDF library in this repo (dropping jsPDF removed ~900 kB of vendored script). It prints the *distribution*, not the log: summary, per-target min/average/p50/p95/max/jitter/loss, peaks and lows, unanswered probes, the connection, the client identifier and the method. A run at half-second intervals makes hundreds of rows an hour and nobody reads row 300 — that is what the spreadsheet exports are for, and the report says so.
+
+Peaks are ranked by how far a sample sat **above its own target's median**, not by absolute time. Ranked absolutely every row comes from whichever host is furthest away, and the table just says "the slow one is slow"; ranked by excursion, a real spike on a fast host appears next to a slow host's normal traffic. Lows are each target's best sample.
 
 ## Shape
 
@@ -46,14 +86,17 @@ index.html · css/ping.css · i18n.js   fixed-viewport shell, method dialog
 js/probe.js    the measurement: fetch + Resource Timing + STUN, cold/warm
 js/stats.js    Series, quantiles, jitter, loss, verdict bands
 js/viz.js      dependency-free canvas chart + SVG sparkline + phase bar
-js/export.js   CSV native; SheetJS and jsPDF loaded from ./vendor on demand
+js/export.js   CSV native; SheetJS loaded from ./vendor on demand
+js/speed.js    downlink throughput, parallel streams, before the run
+js/client.js   client identifier, browser/platform, what the OS publishes
+js/report.js   the standalone printable report (Topo's approach, no PDF lib)
 js/app.js      targets, per-target loops, rendering
-vendor/        xlsx, jspdf, jspdf-autotable (vendored, never a CDN)
+vendor/        xlsx (vendored, never a CDN)
 fonts/         IBM Plex Sans/Mono + Red Hat Display, self-hosted
 carino-navbar.js · carino-clock.js · carino-lang.js   the shared fleet chrome
 ```
 
-The export libraries are fetched only when someone presses an export button, so a page view that never exports pays none of their 1.3 MB.
+SheetJS is fetched only when someone presses XLSX or ODS, so a page view that never exports a spreadsheet pays none of it.
 
 Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet.
 

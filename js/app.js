@@ -11,16 +11,26 @@
    *began*, and never has two probes outstanding. Set a 500 ms interval against
    a 900 ms host and it degrades to back-to-back probes instead of lying. */
 
-import { probe, toURL, isMixedContent, stunRTT, connectionHint } from './probe.js';
-import { Series, combine, verdict } from './stats.js';
+import { probe, toURL, isMixedContent, stunProbe } from './probe.js';
+import { Series, combine, verdict, extremes, lossEvents } from './stats.js';
 import { drawChart, sparkline, seriesColor, phaseBar } from './viz.js';
-import { exportCSV, exportSheet, exportPDF } from './export.js';
+import { exportCSV, exportSheet } from './export.js';
+import { measureDownlink, fmtMbps } from './speed.js';
+import { environment, connectionLabel } from './client.js';
+import { reportHtml, openReport } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 const t = (k) => (window.t ? window.t(k) : k);
 
 const STORE = 'carino-ping/v1';
 const STUN_SERVER = 'stun:stun.l.google.com:19302';
+
+/* One timer, not two. A separate timeout selector asked the user to reason
+   about the relationship between "how often" and "how long before I give up",
+   which has exactly one sensible answer: long enough that a slow-but-alive host
+   still counts, short enough that a dead one does not stall the run. Three
+   intervals, clamped to a floor and a ceiling, is that answer. */
+const timeoutFor = (interval) => Math.min(10000, Math.max(2000, interval * 3));
 const LOG_DOM_CAP = 400;     // rows kept in the DOM; the export keeps them all
 const CHART_WINDOW = 180;    // samples drawn per series
 
@@ -30,10 +40,11 @@ const state = {
   log: [],
   seq: 0,
   interval: 2000,
-  timeout: 5000,
   runHidden: false,
   logScale: false,
   filter: '',
+  startedAt: null,
+  endedAt: null,
   waiters: new Set(),   // resolve handles for the cancellable sleeps
 };
 
@@ -45,7 +56,6 @@ function save() {
       targets: $('targetInput').value,
       path: $('pathInput').value,
       interval: state.interval,
-      timeout: state.timeout,
       runHidden: state.runHidden,
       logScale: state.logScale,
     }));
@@ -59,7 +69,6 @@ function restore() {
   if (saved.targets) $('targetInput').value = saved.targets;
   if (saved.path) $('pathInput').value = saved.path;
   if (saved.interval) { state.interval = saved.interval; $('intervalSel').value = String(saved.interval); }
-  if (saved.timeout) { state.timeout = saved.timeout; $('timeoutSel').value = String(saved.timeout); }
   state.runHidden = !!saved.runHidden; $('optHidden').checked = state.runHidden;
   state.logScale = !!saved.logScale; $('btnLogScale').classList.toggle('active', state.logScale);
 }
@@ -118,7 +127,7 @@ async function runTarget(tg) {
     const began = performance.now();
 
     const cold = !tg.seen;
-    const sample = await probe(tg.url, { timeout: state.timeout, cold });
+    const sample = await probe(tg.url, { timeout: timeoutFor(state.interval), cold });
     tg.seen = true;
     if (!state.running) return;
 
@@ -134,19 +143,29 @@ async function runTarget(tg) {
   }
 }
 
-function start() {
+async function start() {
   const targets = parseTargets();
   if (!targets.length) { notice(t('Add at least one website to measure.'), 'err'); return; }
   state.targets = targets;
   state.running = true;
+  state.startedAt = Date.now();
+  state.endedAt = null;
   setRunUI(true);
   renderCards();
+
+  // Bandwidth first, on purpose: probing during a saturated download measures
+  // the queue it created. Only once this returns is the line idle enough for
+  // the latency numbers to mean anything.
+  if (!conn.speed) await measureConnection();
+  else if (!conn.stun) await measureStun();
+  if (!state.running) return;               // stopped while the speed test ran
+
   targets.forEach((tg) => { runTarget(tg); });
-  measureStun();
 }
 
 function stop() {
   state.running = false;
+  state.endedAt = Date.now();
   wakeAll();
   setRunUI(false);
   schedulePaint();
@@ -186,7 +205,6 @@ function paint() {
   const list = state.targets.map((x) => x.series);
   const sum = combine(list);
 
-  $('stTargets').textContent = String(sum.targets);
   $('stBest').textContent = ms(sum.min);
   $('stP50').textContent = ms(sum.p50);
   $('stP95').textContent = ms(sum.p95);
@@ -281,50 +299,108 @@ function applyFilter() {
   }
 }
 
-/* ---- baselines ------------------------------------------------------------ */
+/* ---- the connection ------------------------------------------------------
 
-/* Two readings that put the HTTP numbers in context.
+   Three facts about the line, gathered before the latency run rather than
+   during it.
 
-   navigator.connection.rtt is free and local — the browser already knows it,
-   reading it contacts nobody, so it is filled in on load.
+   The throughput test is the reason the ordering matters. A saturated link has
+   a full queue, and a full queue adds delay to everything behind it — so
+   measuring bandwidth while probing would not reveal "latency under load", it
+   would silently corrupt every sample taken during it. Start therefore runs the
+   speed test to completion first and only then begins probing, on an idle line.
 
-   The STUN round trip is not free in that sense: it sends a binding request to
-   a third-party STUN server, which is the one packet this page emits that does
-   not go to a host the user named. So it never fires on page load. It runs
-   when the user presses Re-measure, or when they press Start and have
-   therefore asked for a measurement, and the server it talks to is printed
-   next to the number rather than buried in the source. */
+   The STUN exchange is the one packet this page sends to a host the user did
+   not name, so it never fires on page load, and the server it talks to is
+   printed next to the reading rather than buried in the source. It returns the
+   public address as a side effect, because that is literally what a
+   server-reflexive candidate is.
 
-function showConnectionHint() {
-  const c = connectionHint();
-  $('connVal').textContent = c && c.rtt != null
-    ? `${c.rtt} ms${c.effectiveType ? ` · ${c.effectiveType}` : ''}`
-    : t('not published by this browser');
+   The interface is not here because it cannot be. See client.js. */
+
+const conn = { speed: null, stun: null, env: null, testing: false };
+
+function renderConnection() {
+  const e = conn.env || environment();
+  conn.env = e;
+  $('connType').textContent = e.connection.type || t('not published');
+  $('connEff').textContent = connectionLabel(e.connection, t);
+  $('connIP').textContent = conn.stun && conn.stun.publicIP
+    ? conn.stun.publicIP
+    : t('not measured');
+  $('stStun').textContent = conn.stun && conn.stun.rtt != null ? ms(conn.stun.rtt) : '—';
+  $('connSpeed').textContent = conn.speed && conn.speed.mbps != null
+    ? fmtMbps(conn.speed.mbps)
+    : (conn.testing ? t('testing…') : t('not measured'));
+  $('clientId').textContent = e.id;
 }
 
-let stunBusy = false;
 async function measureStun() {
-  if (stunBusy) return;
-  stunBusy = true;
-  $('stunVal').textContent = t('measuring…');
+  $('stStun').textContent = t('…');
+  conn.stun = await stunProbe(STUN_SERVER);
+  renderConnection();
+}
+
+/** Throughput first, then STUN. Returns when the line is idle again. */
+async function measureConnection({ quiet = false } = {}) {
+  if (conn.testing) return;
+  conn.testing = true;
+  $('btnSpeed').disabled = true;
+  renderConnection();
   try {
-    const r = await stunRTT(STUN_SERVER);
-    $('stunVal').textContent = r == null ? t('blocked or unavailable') : ms(r);
+    if (!quiet) notice(t('Measuring downlink — the latency run starts when this finishes, so the line is idle for it.'), 'warn');
+    conn.speed = await measureDownlink({
+      onProgress: (_, frac) => { $('connSpeed').textContent = `${Math.round(frac * 100)} %`; },
+    });
+    if (conn.speed && conn.speed.mbps == null) {
+      $('connSpeed').textContent = t('unavailable');
+    }
+    await measureStun();
   } finally {
-    stunBusy = false;
+    conn.testing = false;
+    $('btnSpeed').disabled = false;
+    renderConnection();
+    if (!quiet) notice('');
   }
 }
 
-/* ---- exports -------------------------------------------------------------- */
+/* ---- exports and the report ----------------------------------------------- */
 
+/* Concrete, because the abstract version invites the obvious complaint — that
+   these numbers read higher than `ping` from a terminal. Measured on the
+   machine this was written on, same minute, same network:
+
+       host              ICMP min/avg     this tool (TTFB)
+       carino.systems    40.6 / 42.2 ms   43 ms
+       github.com        96.3 / 98.4 ms   102 ms
+       cloudflare.com     4.9 /  7.0 ms   34 ms      <-- the odd one out
+
+   The first two agree with ICMP to within a few percent, which is the answer
+   to "is this thing accurate". The third is five times high, and the reason is
+   not the measurement: `cloudflare.com/favicon.ico` answers 301 and redirects
+   to `www.cloudflare.com/favicon.ico`. The browser follows it, so every probe
+   pays a second request to a second host — a fresh DNS lookup, TCP handshake
+   and TLS handshake the first time, and an extra round trip every time after.
+   Probing the final URL instead reads 22 ms.
+
+   So when a reading looks too high, in order of likelihood:
+     1. the target redirects — probe the URL it redirects TO;
+     2. the figure is a total, not TTFB, because the server sends no
+        Timing-Allow-Origin, so it includes the server's own think time and the
+        transfer;
+     3. ICMP is answered by the kernel at the first anycast node that sees the
+        packet, while HTTPS has to reach something that can serve the path —
+        for a CDN those can be different machines in different cities. */
 const METHOD = 'Measured from a web browser, which cannot send ICMP: no browser API exposes raw sockets. '
   + 'Each sample is an HTTPS request to the target with cache and credentials disabled, aborted at the '
   + 'configured timeout. Where the server sends a Timing-Allow-Origin header, the Resource Timing API gives '
-  + 'the real phase split and the RTT column is time-to-first-byte; where it does not, only the total round '
-  + 'trip is visible and the RTT column is that total, which also contains server processing and transfer '
-  + 'time. The first request to each host is recorded but excluded from the statistics because it carries '
-  + 'DNS and the TLS handshake. Figures therefore describe what this browser experienced over HTTPS from '
-  + 'this network at this time; they are an upper bound on the path latency, never an ICMP round trip.';
+  + 'the real phase split and the figure is time-to-first-byte; where it does not, only the total round '
+  + 'trip is visible and the figure is that total, which also contains server processing and transfer time. '
+  + 'The first request to each host is recorded but excluded from the statistics because it carries DNS and '
+  + 'the TLS handshake. A target that redirects is followed, so every probe against it pays the extra hop — '
+  + 'probe the final URL to avoid that. Downlink was measured before the run, not during it, so the latency '
+  + 'samples were taken on an idle line. Figures describe what this browser experienced over HTTPS from this '
+  + 'network at this time; they are an upper bound on path latency, never an ICMP round trip.';
 
 function exportGuard() {
   if (!state.log.length) { notice(t('Nothing measured yet — run at least one probe before exporting.'), 'warn'); return false; }
@@ -335,20 +411,42 @@ async function doExport(kind) {
   if (!exportGuard()) return;
   try {
     if (kind === 'csv') exportCSV(state.log);
-    else if (kind === 'xlsx' || kind === 'ods') await exportSheet(state.log, kind);
-    else {
-      const sum = combine(state.targets.map((x) => x.series));
-      await exportPDF(state.log, {
-        summary: sum,
-        perTarget: state.targets.map((x) => x.series.snapshot()),
-        method: METHOD,
-        verdict: verdict(sum).text,
-      });
-    }
+    else await exportSheet(state.log, kind);
     notice('');
   } catch (err) {
     notice(t('Export failed:') + ' ' + err.message, 'err');
   }
+}
+
+function buildReport() {
+  const list = state.targets.map((x) => x.series);
+  const sum = combine(list);
+  return reportHtml({
+    summary: sum,
+    targets: list.map((s) => s.snapshot()),
+    extremes: extremes(list, 5),
+    lossEvents: lossEvents(list),
+    verdict: t(verdict(sum).text),
+    method: METHOD,
+    env: conn.env || environment(),
+    speed: conn.speed,
+    stun: conn.stun,
+    run: {
+      started: state.startedAt || Date.now(),
+      ended: state.endedAt || Date.now(),
+      interval: state.interval,
+      timeout: timeoutFor(state.interval),
+      path: $('pathInput').value,
+      samples: state.log.length,
+      targetsLabel: state.targets.map((x) => x.raw).join(', '),
+    },
+  }, t);
+}
+
+function doReport() {
+  if (!exportGuard()) return;
+  try { openReport(buildReport(), t); notice(''); }
+  catch (err) { notice(err.message, 'err'); }
 }
 
 /* ---- wiring --------------------------------------------------------------- */
@@ -358,8 +456,11 @@ function init() {
 
   $('btnRun').addEventListener('click', () => (state.running ? stop() : start()));
   $('btnClear').addEventListener('click', clearAll);
-  $('intervalSel').addEventListener('change', (e) => { state.interval = +e.target.value; save(); });
-  $('timeoutSel').addEventListener('change', (e) => { state.timeout = +e.target.value; save(); });
+  $('intervalSel').addEventListener('change', (e) => {
+    state.interval = +e.target.value;
+    $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
+    save();
+  });
   $('optHidden').addEventListener('change', (e) => { state.runHidden = e.target.checked; save(); wakeAll(); });
   $('targetInput').addEventListener('change', save);
   $('pathInput').addEventListener('change', save);
@@ -369,7 +470,6 @@ function init() {
     e.currentTarget.classList.toggle('active', state.logScale);
     save(); paint();
   });
-  $('btnBaseline').addEventListener('click', measureStun);
 
   // The method text lives in a dialog so the app itself never needs a
   // scrollbar. <dialog> gives Escape-to-close and focus trapping for free.
@@ -380,7 +480,8 @@ function init() {
   $('btnCsv').addEventListener('click', () => doExport('csv'));
   $('btnXlsx').addEventListener('click', () => doExport('xlsx'));
   $('btnOds').addEventListener('click', () => doExport('ods'));
-  $('btnPdf').addEventListener('click', () => doExport('pdf'));
+  $('btnReport').addEventListener('click', doReport);
+  $('btnSpeed').addEventListener('click', () => measureConnection({ quiet: true }));
 
   $('targetInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !state.running) start();
@@ -397,12 +498,13 @@ function init() {
   // Phone URL-bar show/hide changes the height without firing a resize in some
   // browsers; the visual viewport does report it.
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-  window.addEventListener('carino:langchange', () => { setRunUI(state.running); showConnectionHint(); paint(); });
+  window.addEventListener('carino:langchange', () => { setRunUI(state.running); renderConnection(); paint(); });
 
   $('stunHost').textContent = STUN_SERVER;
+  $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
   state.targets = parseTargets();
   paint();
-  showConnectionHint();
+  renderConnection();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

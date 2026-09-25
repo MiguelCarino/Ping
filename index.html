@@ -16,18 +16,13 @@
   <header class="cs-header" data-carino-strip>
     <div class="cs-right" data-carino-actions>
       <span class="live-chip" id="modeChip" title="Measurement state">IDLE</span>
-      <select class="cs-btn cs-select" id="intervalSel" title="Time between probes for each target">
+      <select class="cs-btn cs-select" id="intervalSel" title="Time between probes">
         <option value="500">0.5s</option>
         <option value="1000">1s</option>
         <option value="2000" selected>2s</option>
         <option value="5000">5s</option>
         <option value="10000">10s</option>
         <option value="30000">30s</option>
-      </select>
-      <select class="cs-btn cs-select" id="timeoutSel" title="Give up on a probe after">
-        <option value="2000" data-i18n>2s timeout</option>
-        <option value="5000" selected data-i18n>5s timeout</option>
-        <option value="10000" data-i18n>10s timeout</option>
       </select>
       <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring">
         <span class="btn-label">Start</span>
@@ -37,7 +32,7 @@
         <button class="cs-btn seg-btn" id="btnCsv" title="Download every sample as CSV">CSV</button>
         <button class="cs-btn seg-btn" id="btnXlsx" title="Download every sample as XLSX">XLSX</button>
         <button class="cs-btn seg-btn" id="btnOds" title="Download every sample as ODS">ODS</button>
-        <button class="cs-btn seg-btn" id="btnPdf" title="Download a PDF report with method and limits stated">PDF</button>
+        <button class="cs-btn seg-btn" id="btnReport" title="Open a printable report — summary, per-target distribution, peaks and lows" data-i18n>Report</button>
       </span>
       <button class="cs-btn" id="btnMethod" title="What this actually measures" data-i18n>Method</button>
     </div>
@@ -64,15 +59,26 @@
     </section>
     <p class="notice" id="notice" hidden></p>
 
+    <!-- The line itself. Measured before the run, never during it. -->
+    <section class="strip conn">
+      <span class="slabel" data-i18n>Connection</span>
+      <span class="cfield"><i data-i18n>Downlink</i> <b id="connSpeed" data-i18n>not measured</b></span>
+      <span class="cfield"><i data-i18n>Interface</i> <b id="connType" data-i18n>not published</b></span>
+      <span class="cfield"><i data-i18n>Reported</i> <b id="connEff">—</b></span>
+      <span class="cfield"><i data-i18n>Public address</i> <b id="connIP" data-i18n>not measured</b></span>
+      <span class="cfield"><i data-i18n>Client</i> <b id="clientId">—</b></span>
+      <button class="cs-btn tiny" id="btnSpeed" title="Measure downlink and the STUN round trip now" data-i18n>Test</button>
+    </section>
+
     <!-- Headline numbers -->
     <section class="tiles" aria-label="Summary">
-      <div class="stat-tile"><span class="st-label" data-i18n>Targets</span><b class="st-value num" id="stTargets">0</b><span class="st-sub" data-i18n>measured at once</span></div>
       <div class="stat-tile"><span class="st-label" data-i18n>Best</span><b class="st-value num accent" id="stBest">—</b><span class="st-sub" data-i18n>closest to true path delay</span></div>
       <div class="stat-tile"><span class="st-label">p50</span><b class="st-value num" id="stP50">—</b><span class="st-sub" data-i18n>typical request</span></div>
       <div class="stat-tile"><span class="st-label">p95</span><b class="st-value num" id="stP95">—</b><span class="st-sub" data-i18n>the unlucky one in twenty</span></div>
       <div class="stat-tile"><span class="st-label" data-i18n>Jitter</span><b class="st-value num" id="stJitter">—</b><span class="st-sub" data-i18n>swing between samples</span></div>
       <div class="stat-tile" id="tileLoss"><span class="st-label" data-i18n>Loss</span><b class="st-value num" id="stLoss">—</b><span class="st-sub" id="stLossSub" data-i18n>none sent</span></div>
       <div class="stat-tile"><span class="st-label" data-i18n>Sent</span><b class="st-value num" id="stSent">0</b><span class="st-sub" data-i18n>requests issued</span></div>
+      <div class="stat-tile"><span class="st-label">STUN</span><b class="st-value num" id="stStun">—</b><span class="st-sub" data-i18n>UDP floor, no TLS</span></div>
     </section>
 
     <p class="verdict" id="verdict" data-key="idle" data-i18n>No data yet.</p>
@@ -118,15 +124,6 @@
       </div>
     </div>
 
-    <!-- Status bar: both baselines, live, in the space a footer costs anyway. -->
-    <footer class="statusbar">
-      <span class="sb-item"><i>STUN</i> <b class="num" id="stunVal" data-i18n>not measured</b></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><i data-i18n>browser est.</i> <b class="num" id="connVal">—</b></span>
-      <button class="cs-btn tiny" id="btnBaseline" data-i18n>Re-measure</button>
-      <span class="spacer"></span>
-      <span class="sb-note" data-i18n>Client-side only. Nothing measured here is uploaded.</span>
-    </footer>
   </main>
 
   <!-- The long explanation lives here so the app itself stays one screen. -->
@@ -136,24 +133,41 @@
       <button class="cs-btn" id="btnMethodClose" aria-label="Close" data-i18n>Close</button>
     </div>
     <div class="dlg-body">
-      <p data-i18n-html>A browser cannot send ICMP. No web API exposes raw sockets, so there is no way to run the <code>ping</code> command's actual protocol from a web page — and any page that claims to is timing something else and calling it ping.</p>
-      <p data-i18n-html>What this page does instead is time a real HTTPS request to each target, with caching and credentials off and a hard abort at the timeout. That is a genuine round trip over the network you are on, and it is the right tool for "is this site slow from here". It is an upper bound on path latency, never equal to it.</p>
+      <p data-i18n-html>A browser cannot send ICMP. No web API exposes raw sockets, so the <code>ping</code> command's actual protocol is unavailable to any web page. Each sample here is a real HTTPS request to the target — cache and credentials off, aborted at the timeout — and the figure is how long it took.</p>
+
+      <h3 data-i18n>Does it agree with the ping command?</h3>
+      <p data-i18n>Mostly yes, and where it does not the reason is knowable. Measured on one machine, one network, the same minute:</p>
+      <table class="cmp">
+        <thead><tr><th data-i18n>Host</th><th>ICMP <span data-i18n>min / avg</span></th><th data-i18n>This tool</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>carino.systems</td><td>40.6 / 42.2 ms</td><td>43 ms</td><td class="ok" data-i18n>agrees</td></tr>
+          <tr><td>github.com</td><td>96.3 / 98.4 ms</td><td>102 ms</td><td class="ok" data-i18n>agrees</td></tr>
+          <tr><td>cloudflare.com</td><td>4.9 / 7.0 ms</td><td>34 ms</td><td class="bad">5&times;</td></tr>
+          <tr><td>www.cloudflare.com</td><td>4.9 / 7.0 ms</td><td>22 ms</td><td class="warn" data-i18n>better</td></tr>
+        </tbody>
+      </table>
+      <p data-i18n-html>The first two match ICMP to within a few percent. The third does not, and the measurement is not at fault: <code>cloudflare.com/favicon.ico</code> answers <strong>301</strong> and redirects to <code>www.cloudflare.com</code>. The browser follows it, so every probe pays a second request to a second host — a fresh DNS lookup, TCP handshake and TLS handshake on the first one, and an extra round trip on every one after. Probing the final URL directly cuts it from 34 ms to 22 ms.</p>
+
+      <h3 data-i18n>So why is mine still higher than the terminal?</h3>
       <ul>
-        <li data-i18n-html><strong>TTFB where the server allows it.</strong> When a target sends a <code>Timing-Allow-Origin</code> header, the Resource Timing API hands over the phase split and the reading becomes time-to-first-byte — mostly propagation delay. Cards and rows marked <em>total only</em> did not get that permission, so their figure still contains server processing and transfer.</li>
-        <li data-i18n-html><strong>The first request is thrown out.</strong> It pays DNS, the TCP handshake and the TLS handshake, routinely several times the steady-state round trip. It is shown on each card, kept in the export, and excluded from every statistic.</li>
-        <li data-i18n-html><strong>An IP address is not an ICMP ping.</strong> A few do answer — <code>8.8.8.8</code>, <code>1.1.1.1</code> and <code>9.9.9.9</code> serve HTTPS with certificates valid for the address, so they return a real number, but it is their web server’s round trip, not the address’s reachability. Most other addresses have no HTTPS listener or no certificate for the literal and come back unreachable, which says nothing about whether the host is up.</li>
-        <li data-i18n-html><strong>Loss is counted, not hidden.</strong> A probe that times out or never connects increments loss and breaks the chart line. A target that fails every request reads 100% loss, not an empty graph.</li>
+        <li data-i18n-html><strong>The target redirects.</strong> Check with <code>curl -sI https://host/path</code>. A 301 or 302 means you are timing two hops. Probe the URL it points at.</li>
+        <li data-i18n-html><strong>You are reading a total, not TTFB.</strong> Where a server sends no <code>Timing-Allow-Origin</code> header the browser hides the phase breakdown, so the figure is the whole request — including the server's own think time and the transfer. Those rows are marked <em>total only</em>. Rows marked <strong>TTFB</strong> are time-to-first-byte, which is mostly propagation delay.</li>
+        <li data-i18n-html><strong>ICMP and HTTPS may not talk to the same machine.</strong> An echo request is answered by the kernel of the first anycast node that sees the packet. An HTTPS request has to reach something that can actually serve the path, and on a CDN that can be a different machine in a different city.</li>
+        <li data-i18n-html><strong>The first request is not the steady state.</strong> It pays DNS plus the TCP and TLS handshakes — routinely three to five times the warm round trip. It is shown on each card, kept in the exports, and excluded from every statistic on this screen.</li>
       </ul>
 
-      <h3 data-i18n>Baselines</h3>
-      <p class="muted small" data-i18n>A STUN binding exchange carries no TLS and no server-side work, so this is the closest a browser gets to a real network round trip. Treat it as the floor: whatever a target measures above this is protocol and application overhead, not distance.</p>
-      <p class="muted small"><span data-i18n>This is the one probe that leaves for a host you did not name. It runs only when you press Start or Re-measure, never on page load, and it goes to</span> <code id="stunHost"></code>.</p>
-      <p class="muted small" data-i18n>navigator.connection.rtt — the browser's own figure, not one this page measured. Chromium rounds it to 25 ms and Firefox does not publish it.</p>
+      <h3 data-i18n>Cross-checks on the same screen</h3>
+      <p data-i18n-html><strong>STUN</strong> is a single UDP exchange with no TLS and no server-side work — the closest a browser gets to a raw round trip. It is the floor: what a target reads above it is protocol and application overhead, not distance. <strong>Downlink</strong> is measured before the run and never during it, because a saturated link has a full queue and a full queue adds delay to everything behind it.</p>
+      <p class="muted small"><span data-i18n>The STUN exchange is the one probe that leaves for a host you did not name. It runs when you press Start or Test, never on page load, and it goes to</span> <code id="stunHost"></code>. <span data-i18n>It returns your public address as a side effect — that is what a server-reflexive candidate is.</span></p>
 
-      <h3 data-i18n>Reading the screen</h3>
-      <p class="muted small" data-i18n>The probe path only has to reach the server. A 404 is a perfectly good round trip and is timed like any other reply, so there is no need to hunt for a file that exists — some of these targets will log 404s in devtools and the measurement is unaffected.</p>
-      <p class="muted small" data-i18n>Each target is its own line. A red rule marks a probe that never came back; the line breaks there rather than bridging the gap. The first, cold request per host is left out.</p>
-      <p class="muted small" data-i18n>Everything stays in this tab: targets are kept in this browser's local storage, samples exist only in memory until you export them, and no result is sent anywhere. The requests themselves obviously do reach the hosts you name.</p>
+      <h3 data-i18n>Why it cannot name your network interface</h3>
+      <p data-i18n-html>There is no web API for it, and that is deliberate rather than missing. Chrome and Firefox replace WebRTC host candidates with a random <code>&lt;uuid&gt;.local</code> name precisely so a page cannot enumerate the network it is on. <code>navigator.connection.type</code> is the nearest thing and only Chromium on Android and ChromeOS populates it; on desktop it is undefined, and Firefox and Safari do not ship the API at all. The Interface field reads <em>not published</em> rather than guessing from the effective type.</p>
+
+      <h3 data-i18n>Other things worth knowing</h3>
+      <p class="muted small" data-i18n-html><strong>IP addresses.</strong> A few answer — <code>8.8.8.8</code>, <code>1.1.1.1</code> and <code>9.9.9.9</code> serve HTTPS with certificates valid for the address — but you are timing their web server, not the address's reachability. Most others have no HTTPS listener and come back unreachable, which says nothing about whether the host is up.</p>
+      <p class="muted small" data-i18n>A 404 is a perfectly good round trip and is timed like any other reply, so the probe path does not have to exist. Some targets will log 404s in devtools; the measurement is unaffected.</p>
+      <p class="muted small" data-i18n>Loss is counted, not hidden. A probe that times out or never connects increments loss and breaks the chart line, and a target that fails every request reads 100% loss rather than showing an empty graph.</p>
+      <p class="muted small" data-i18n>Everything stays in this tab: targets and the client identifier are kept in this browser's local storage, samples exist only in memory until you export them, and no result is sent anywhere. The requests themselves obviously do reach the hosts you name.</p>
     </div>
   </dialog>
 

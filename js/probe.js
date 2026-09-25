@@ -175,7 +175,7 @@ export async function probe(url, { timeout = 5000, cold = false } = {}) {
   return s;
 }
 
-/* ---- STUN round trip -------------------------------------------------------
+/* ---- STUN ------------------------------------------------------------------
    The one place a browser gets genuinely close to ICMP. A STUN binding request
    is a small UDP exchange with no TLS, no HTTP and no server-side application
    work, so the time until the server-reflexive candidate arrives is very nearly
@@ -185,38 +185,58 @@ export async function probe(url, { timeout = 5000, cold = false } = {}) {
    so `currentRoundTripTime` on a candidate pair never exists. What it does give
    is an honest floor for this machine's path to the public internet, which is
    the right thing to compare an HTTP reading against: the gap between them is
-   everything HTTP adds on top of the wire. */
-export function stunRTT(server = 'stun:stun.l.google.com:19302', timeout = 4000) {
+   everything HTTP adds on top of the wire.
+
+   The same exchange also yields the public address, because that is precisely
+   what a server-reflexive candidate is: the address the STUN server saw. The
+   *local* address does not come back — Chrome and Firefox replace host
+   candidates with a random `<uuid>.local` mDNS name specifically so a web page
+   cannot enumerate the network it is on. That is why this file can tell you
+   your public IP but never your interface. */
+export function stunProbe(server = 'stun:stun.l.google.com:19302', timeout = 4000) {
   return new Promise((resolve) => {
     let pc, timer, done = false;
-    const finish = (ms) => {
+    const result = { rtt: null, publicIP: null, localMasked: false, family: null };
+    const finish = () => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       try { pc && pc.close(); } catch { /* already closed */ }
-      resolve(ms);
+      resolve(result);
     };
     try {
       pc = new RTCPeerConnection({ iceServers: [{ urls: server }], iceCandidatePoolSize: 0 });
     } catch {
-      return resolve(null);                       // no WebRTC in this browser
+      return resolve(result);                     // no WebRTC in this browser
     }
     pc.createDataChannel('probe');
     const t0 = performance.now();
     pc.onicecandidate = (ev) => {
-      // srflx is the candidate the STUN server told us about; host candidates
-      // are local and cost no round trip, so they are not the signal.
-      if (ev.candidate && ev.candidate.candidate.includes('typ srflx')) {
-        finish(performance.now() - t0);
-      } else if (!ev.candidate) {
-        finish(null);                             // gathering ended, no srflx
+      if (!ev.candidate) return finish();         // gathering ended
+      const c = ev.candidate.candidate;
+      const typ = (c.match(/ typ (\w+)/) || [])[1];
+      const addr = c.split(' ')[4] || '';
+      if (typ === 'host' && /\.local$/i.test(addr)) result.localMasked = true;
+      if (typ === 'srflx') {
+        // First srflx: the round trip is the time until the STUN server answered.
+        if (result.rtt == null) result.rtt = performance.now() - t0;
+        if (!result.publicIP) {
+          result.publicIP = addr;
+          result.family = addr.includes(':') ? 'IPv6' : 'IPv4';
+        }
+        finish();
       }
     };
-    timer = setTimeout(() => finish(null), timeout);
+    timer = setTimeout(finish, timeout);
     pc.createOffer()
       .then((o) => pc.setLocalDescription(o))
-      .catch(() => finish(null));
+      .catch(() => finish());
   });
+}
+
+/** Back-compat shim: the RTT alone. */
+export async function stunRTT(server, timeout) {
+  return (await stunProbe(server, timeout)).rtt;
 }
 
 /** The browser's own transport estimate, where it is published. Context, not a

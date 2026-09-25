@@ -119,6 +119,7 @@ export function combine(seriesList) {
     targets: seriesList.length,
     sent, lost,
     loss: sent ? (lost / sent) * 100 : 0,
+    mean: sorted.length ? sorted.reduce((a, b) => a + b, 0) / sorted.length : null,
     min: sorted.length ? sorted[0] : null,
     p50: q(50), p95: q(95),
     max: sorted.length ? sorted[sorted.length - 1] : null,
@@ -140,4 +141,62 @@ export function verdict(s) {
   if (s.jitter != null && s.jitter > 60) return { key: 'warn', text: 'Latency is steady on average but swings a lot — poor for real-time audio and video.' };
   if (s.p95 > 120) return { key: 'ok', text: 'Usable. Fine for browsing, adequate for calls.' };
   return { key: 'good', text: 'Low and steady. Nothing here would hold a connection back.' };
+}
+
+/* ---- report helpers --------------------------------------------------------
+   The report prints the distribution plus the handful of samples at each end,
+   not the whole log. These two functions are what "peaks and lows" and
+   "unanswered probes" mean, computed from the same series the screen uses so
+   the two can never disagree. */
+
+/**
+ * Peaks and lows.
+ *
+ * "The n slowest samples overall" sounds right and is nearly useless: on any
+ * run with one distant host, all n come from that host and the table just says
+ * "the slow one is slow" n times. What a reader is looking for is a *spike* —
+ * a sample far above what that same target normally does — so peaks are ranked
+ * by how far each sample sits above its own target's median, and each row says
+ * by how much.
+ *
+ * Lows are one row per target: its best sample, which is the closest thing the
+ * run has to that path's floor.
+ */
+export function extremes(seriesList, n = 5) {
+  const peaks = [];
+  const lows = [];
+  for (const s of seriesList) {
+    const p50 = s.q(50);
+    let best = null;
+    for (const x of s.all) {
+      if (!x.ok || x.cold || x.rtt == null) continue;
+      if (p50 != null) peaks.push({ target: s.label, rtt: x.rtt, at: x.at, over: x.rtt - p50, kind: 'high' });
+      if (!best || x.rtt < best.rtt) best = { target: s.label, rtt: x.rtt, at: x.at, over: null, kind: 'low' };
+    }
+    if (best) lows.push(best);
+  }
+  peaks.sort((a, b) => b.over - a.over);
+  // A peak that is not actually above the median is not a peak; a perfectly
+  // flat target contributes none rather than padding the table with noise.
+  const realPeaks = peaks.filter((p) => p.over > 0).slice(0, n);
+  lows.sort((a, b) => a.rtt - b.rtt);
+  return [...realPeaks, ...lows];
+}
+
+/** One row per target that lost anything, with when it started and stopped. */
+export function lossEvents(seriesList) {
+  const out = [];
+  for (const s of seriesList) {
+    const bad = s.all.filter((x) => !x.ok);
+    if (!bad.length) continue;
+    const kinds = [...new Set(bad.map((x) => (x.timedOut ? 'timeout' : 'unreachable')))];
+    out.push({
+      target: s.label,
+      count: bad.length,
+      kinds,
+      firstAt: bad[0].at,
+      lastAt: bad[bad.length - 1].at,
+    });
+  }
+  return out.sort((a, b) => b.count - a.count);
 }
