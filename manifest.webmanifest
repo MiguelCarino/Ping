@@ -1,0 +1,21 @@
+{
+  "name": "Carino Ping",
+  "short_name": "Ping",
+  "description": "Client-side HTTPS latency measurement: round trip, jitter, packet loss and the DNS/TLS/TTFB split, straight from your browser. Nothing leaves the page.",
+  "id": "/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    {
+      "src": "logo.webp",
+      "sizes": "50x50",
+      "type": "image/webp",
+      "purpose": "any"
+    }
+  ]
+}

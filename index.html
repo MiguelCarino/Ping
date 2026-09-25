@@ -1,418 +1,165 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carino Ping</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Chart.js for visualization -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- SheetJS for XLSX and ODS export -->
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-    
-    <!-- jsPDF and AutoTable for PDF Report generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { font-family: 'JetBrains Mono', monospace; }
-        
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #0a0a0a; border-left: 1px solid #262626; }
-        ::-webkit-scrollbar-thumb { background: #404040; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #ffcc00; }
-        
-        input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type=number] { -moz-appearance: textfield; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <link rel="icon" href="logo.webp" />
+  <title>Ping — Carino Systems</title>
+  <meta name="description" content="Client-side HTTPS latency measurement: round trip, jitter, packet loss and the DNS/TLS/TTFB split, straight from your browser. Nothing leaves the page." />
+  <meta name="theme-color" content="#050505" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="fonts/carino-fonts.css" />
+  <link rel="stylesheet" href="css/ping.css" />
 </head>
-<body class="bg-[#050505] text-[#d4d4d4] h-screen w-screen overflow-hidden flex flex-col p-4 text-xs lg:text-sm">
+<body>
+  <!-- App controls; carino-navbar.js moves this into the shared navbar. -->
+  <header class="cs-header" data-carino-strip>
+    <div class="cs-right" data-carino-actions>
+      <span class="live-chip" id="modeChip" title="Measurement state">IDLE</span>
+      <select class="cs-btn cs-select" id="intervalSel" title="Time between probes for each target">
+        <option value="500">0.5s</option>
+        <option value="1000">1s</option>
+        <option value="2000" selected>2s</option>
+        <option value="5000">5s</option>
+        <option value="10000">10s</option>
+        <option value="30000">30s</option>
+      </select>
+      <select class="cs-btn cs-select" id="timeoutSel" title="Give up on a probe after">
+        <option value="2000" data-i18n>2s timeout</option>
+        <option value="5000" selected data-i18n>5s timeout</option>
+        <option value="10000" data-i18n>10s timeout</option>
+      </select>
+      <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring">
+        <span class="btn-label">Start</span>
+      </button>
+      <button class="cs-btn" id="btnClear" title="Clear all samples and statistics" data-i18n>Clear</button>
+      <span class="seg" role="group" aria-label="Export">
+        <button class="cs-btn seg-btn" id="btnCsv" title="Download every sample as CSV">CSV</button>
+        <button class="cs-btn seg-btn" id="btnXlsx" title="Download every sample as XLSX">XLSX</button>
+        <button class="cs-btn seg-btn" id="btnOds" title="Download every sample as ODS">ODS</button>
+        <button class="cs-btn seg-btn" id="btnPdf" title="Download a PDF report with method and limits stated">PDF</button>
+      </span>
+      <button class="cs-btn" id="btnMethod" title="What this actually measures" data-i18n>Method</button>
+    </div>
+  </header>
 
-    <!-- HEADER -->
-    <header class="flex justify-between items-center border-b border-[#262626] pb-3 mb-4 shrink-0 overflow-x-auto">
-        <div class="flex items-center gap-4 shrink-0 pr-4">
-            <h1 class="text-white font-bold text-lg"><span class="text-[#ffcc00]">Carino</span> Ping</h1>
-            <div id="live-clock" class="text-white font-bold tracking-widest hidden sm:block">
-                00:00:00 <span class="bg-[#ffcc00] text-black px-1.5 py-0.5 ml-1 text-[10px] rounded uppercase">Local</span>
-            </div>
-            <span class="text-[#525252] hidden md:block">Client-Side HTTP Latency.</span>
-        </div>
-        <div class="flex gap-2 shrink-0">
-            <button onclick="exportData('csv')" class="border border-[#262626] text-[#a3a3a3] hover:text-[#ffcc00] hover:border-[#ffcc00] px-3 py-1 transition-colors rounded-sm">CSV</button>
-            <button onclick="exportData('xlsx')" class="border border-[#262626] text-[#a3a3a3] hover:text-green-400 hover:border-green-400 px-3 py-1 transition-colors rounded-sm">XLSX</button>
-            <button onclick="exportData('ods')" class="border border-[#262626] text-[#a3a3a3] hover:text-blue-400 hover:border-blue-400 px-3 py-1 transition-colors rounded-sm">ODS</button>
-            <button onclick="exportPDF()" class="border border-[#262626] text-black bg-[#ffcc00] hover:bg-white px-3 py-1 transition-colors font-bold rounded-sm flex items-center gap-2">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                PDF REPORT
-            </button>
-        </div>
-    </header>
+  <!-- The whole app is one screen: this element owns the remaining height, and
+       only the panes inside it ever scroll. -->
+  <main class="app">
 
-    <!-- CONTROL & STATS PANEL -->
-    <div class="shrink-0 flex flex-col lg:flex-row gap-4 mb-4">
-        
-        <!-- Controls -->
-        <div class="border border-[#262626] rounded-md p-4 flex-1 bg-[#0a0a0a]">
-            <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-3 flex justify-between">
-                <span>Target Configuration (Websites Only)</span>
-            </div>
-            <div class="flex gap-2 flex-wrap sm:flex-nowrap">
-                <input type="text" id="target-input" value="google.com, 8.8.8.8" class="bg-black border border-[#404040] text-white px-3 py-1.5 flex-[3] min-w-[150px] focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" placeholder="Domains...">
-                
-                <div class="relative flex-[1] flex items-center min-w-[80px]">
-                    <input type="number" id="interval-input" value="5000" min="500" class="w-full bg-black border border-[#404040] text-white pl-3 pr-8 py-1.5 focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" title="Ping Interval">
-                    <span class="absolute right-3 text-[#737373] text-[10px] pointer-events-none">ms</span>
-                </div>
+    <!-- Targets -->
+    <section class="strip targets">
+      <label class="slabel" for="targetInput" data-i18n>Targets</label>
+      <input type="text" id="targetInput" class="field grow"
+             value="carino.systems, cloudflare.com, github.com"
+             placeholder="example.com, another.org"
+             aria-label="Targets, comma separated" />
+      <input type="text" id="pathInput" class="field path" value="/favicon.ico"
+             title="Resource requested on each host. Small is what matters — a 404 answers just as well as a 200."
+             aria-label="Probe path" />
+      <label class="opt" title="Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.">
+        <input type="checkbox" id="optHidden" />
+        <span data-i18n>Run in background tabs</span>
+      </label>
+    </section>
+    <p class="notice" id="notice" hidden></p>
 
-                <div class="flex gap-2 w-full sm:w-auto">
-                    <button id="toggle-btn" onclick="togglePing()" class="flex-1 sm:flex-none bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0">
-                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg> START
-                    </button>
-                    <button onclick="clearLogs()" class="flex-1 sm:flex-none border border-[#404040] text-[#a3a3a3] hover:text-white hover:border-white px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> CLEAR
-                    </button>
-                </div>
-            </div>
-            <div class="mt-3 flex items-center gap-4 text-[10px]">
-                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> Online</div>
-                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Timeout</div>
-                <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Measuring from Client Browser</div>
-            </div>
-        </div>
+    <!-- Headline numbers -->
+    <section class="tiles" aria-label="Summary">
+      <div class="stat-tile"><span class="st-label" data-i18n>Targets</span><b class="st-value num" id="stTargets">0</b><span class="st-sub" data-i18n>measured at once</span></div>
+      <div class="stat-tile"><span class="st-label" data-i18n>Best</span><b class="st-value num accent" id="stBest">—</b><span class="st-sub" data-i18n>closest to true path delay</span></div>
+      <div class="stat-tile"><span class="st-label">p50</span><b class="st-value num" id="stP50">—</b><span class="st-sub" data-i18n>typical request</span></div>
+      <div class="stat-tile"><span class="st-label">p95</span><b class="st-value num" id="stP95">—</b><span class="st-sub" data-i18n>the unlucky one in twenty</span></div>
+      <div class="stat-tile"><span class="st-label" data-i18n>Jitter</span><b class="st-value num" id="stJitter">—</b><span class="st-sub" data-i18n>swing between samples</span></div>
+      <div class="stat-tile" id="tileLoss"><span class="st-label" data-i18n>Loss</span><b class="st-value num" id="stLoss">—</b><span class="st-sub" id="stLossSub" data-i18n>none sent</span></div>
+      <div class="stat-tile"><span class="st-label" data-i18n>Sent</span><b class="st-value num" id="stSent">0</b><span class="st-sub" data-i18n>requests issued</span></div>
+    </section>
 
-        <!-- Metrics Dashboard -->
-        <div class="border border-[#262626] rounded-md p-4 flex-[2] bg-[#0a0a0a] flex gap-4 divide-x divide-[#262626]">
-            <div class="flex-1">
-                <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Active Targets</div>
-                <div class="text-[#ffcc00] text-2xl lg:text-3xl font-bold" id="stat-targets">0</div>
-                <div class="text-[#525252] text-[10px] uppercase mt-1">Concurrently Pinged</div>
-            </div>
-            <div class="flex-1 pl-4">
-                <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Global Avg Ping</div>
-                <div class="text-white text-2xl lg:text-3xl font-bold" id="stat-avg">-- ms</div>
-                <div class="text-[#525252] text-[10px] uppercase mt-1">HTTP Latency</div>
-            </div>
-            <div class="flex-1 pl-4">
-                <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Global Jitter</div>
-                <div class="text-white text-2xl lg:text-3xl font-bold" id="stat-jitter">-- ms</div>
-                <div class="text-[#525252] text-[10px] uppercase mt-1">Avg Abs Variance</div>
-            </div>
-            <div class="flex-1 pl-4">
-                <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Sent</div>
-                <div class="text-white text-2xl lg:text-3xl font-bold" id="stat-count">0</div>
-                <div class="text-[#525252] text-[10px] uppercase mt-1">Total Requests</div>
-            </div>
+    <p class="verdict" id="verdict" data-key="idle" data-i18n>No data yet.</p>
+
+    <!-- Everything below fills whatever height is left and scrolls internally. -->
+    <div class="grid">
+      <section class="panel pane cardspane">
+        <div class="pane-head">
+          <h2 data-i18n>Per target</h2>
         </div>
+        <div class="pane-body cards" id="cards" aria-label="Per-target results"></div>
+      </section>
+
+      <div class="rightcol">
+        <section class="panel pane chartpane">
+          <div class="pane-head">
+            <h2 data-i18n>Round trip over time</h2>
+            <button class="cs-btn" id="btnLogScale" title="Log scale — use it when one target is far slower than the others" data-i18n>Log scale</button>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="chart" data-empty="Waiting for the first round trip…"></canvas>
+          </div>
+        </section>
+
+        <section class="panel pane logpane">
+          <div class="pane-head">
+            <h2 data-i18n>Samples</h2>
+            <input type="text" id="logFilter" class="field sm" placeholder="Filter by target…" aria-label="Filter samples by target" />
+          </div>
+          <div class="lhead">
+            <span class="c-seq">#</span>
+            <span class="c-time" data-i18n>Time</span>
+            <span class="c-tgt" data-i18n>Target</span>
+            <span class="c-rtt">RTT</span>
+            <span class="c-ph" data-i18n>Phases</span>
+            <span class="c-st" data-i18n>Status</span>
+          </div>
+          <div class="pane-body" id="logPane">
+            <div id="logBody"></div>
+            <p class="empty" id="logEmpty" data-i18n>Nothing measured yet. Enter one or more websites and press Start.</p>
+          </div>
+        </section>
+      </div>
     </div>
 
-    <!-- MAIN CONTENT AREA (Table + Chart stacked) -->
-    <div class="flex-1 min-h-0 flex flex-col gap-4">
-        
-        <!-- LOG CONTAINER -->
-        <div class="flex-[3] min-h-0 border border-[#262626] rounded-md bg-[#0a0a0a] flex flex-col">
-            <div class="flex border-b border-[#262626] text-[#737373] text-[10px] uppercase tracking-widest p-3 bg-[#0a0a0a] shrink-0">
-                <div class="w-16">SEQ</div>
-                <div class="flex-1">TIMESTAMP</div>
-                <div class="flex-1">TARGET</div>
-                <div class="w-32 text-right">LATENCY (HTTP)</div>
-                <div class="w-32 text-right">STATUS</div>
-            </div>
-            <div id="log-list" class="flex-1 overflow-y-auto p-2 space-y-1">
-                <div id="empty-state" class="text-center text-[#525252] py-6">Awaiting target execution...</div>
-            </div>
-        </div>
+    <!-- Status bar: both baselines, live, in the space a footer costs anyway. -->
+    <footer class="statusbar">
+      <span class="sb-item"><i>STUN</i> <b class="num" id="stunVal" data-i18n>not measured</b></span>
+      <span class="sb-sep">·</span>
+      <span class="sb-item"><i data-i18n>browser est.</i> <b class="num" id="connVal">—</b></span>
+      <button class="cs-btn tiny" id="btnBaseline" data-i18n>Re-measure</button>
+      <span class="spacer"></span>
+      <span class="sb-note" data-i18n>Client-side only. Nothing measured here is uploaded.</span>
+    </footer>
+  </main>
 
-        <!-- CHART CONTAINER -->
-        <div class="flex-[2] min-h-0 border border-[#262626] rounded-md bg-[#0a0a0a] p-3 flex flex-col">
-            <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-2 shrink-0">Global Latency Over Time</div>
-            <div class="flex-1 relative w-full h-full min-h-[100px]">
-                <canvas id="pingChart"></canvas>
-            </div>
-        </div>
-
+  <!-- The long explanation lives here so the app itself stays one screen. -->
+  <dialog id="dlgMethod" class="dlg" aria-labelledby="dlgMethodTitle">
+    <div class="dlg-head">
+      <h2 id="dlgMethodTitle" data-i18n>What this actually measures</h2>
+      <button class="cs-btn" id="btnMethodClose" aria-label="Close" data-i18n>Close</button>
     </div>
+    <div class="dlg-body">
+      <p data-i18n-html>A browser cannot send ICMP. No web API exposes raw sockets, so there is no way to run the <code>ping</code> command's actual protocol from a web page — and any page that claims to is timing something else and calling it ping.</p>
+      <p data-i18n-html>What this page does instead is time a real HTTPS request to each target, with caching and credentials off and a hard abort at the timeout. That is a genuine round trip over the network you are on, and it is the right tool for "is this site slow from here". It is an upper bound on path latency, never equal to it.</p>
+      <ul>
+        <li data-i18n-html><strong>TTFB where the server allows it.</strong> When a target sends a <code>Timing-Allow-Origin</code> header, the Resource Timing API hands over the phase split and the reading becomes time-to-first-byte — mostly propagation delay. Cards and rows marked <em>total only</em> did not get that permission, so their figure still contains server processing and transfer.</li>
+        <li data-i18n-html><strong>The first request is thrown out.</strong> It pays DNS, the TCP handshake and the TLS handshake, routinely several times the steady-state round trip. It is shown on each card, kept in the export, and excluded from every statistic.</li>
+        <li data-i18n-html><strong>An IP address is not an ICMP ping.</strong> A few do answer — <code>8.8.8.8</code>, <code>1.1.1.1</code> and <code>9.9.9.9</code> serve HTTPS with certificates valid for the address, so they return a real number, but it is their web server’s round trip, not the address’s reachability. Most other addresses have no HTTPS listener or no certificate for the literal and come back unreachable, which says nothing about whether the host is up.</li>
+        <li data-i18n-html><strong>Loss is counted, not hidden.</strong> A probe that times out or never connects increments loss and breaks the chart line. A target that fails every request reads 100% loss, not an empty graph.</li>
+      </ul>
 
-    <script>
-        let isRunning = false;
-        let intervalId = null;
-        let seq = 0;
-        let pingHistory = [];
-        let logData = [["Sequence", "Timestamp", "Target", "Latency (ms)", "Status"]];
-        let chartInstance = null;
+      <h3 data-i18n>Baselines</h3>
+      <p class="muted small" data-i18n>A STUN binding exchange carries no TLS and no server-side work, so this is the closest a browser gets to a real network round trip. Treat it as the floor: whatever a target measures above this is protocol and application overhead, not distance.</p>
+      <p class="muted small"><span data-i18n>This is the one probe that leaves for a host you did not name. It runs only when you press Start or Re-measure, never on page load, and it goes to</span> <code id="stunHost"></code>.</p>
+      <p class="muted small" data-i18n>navigator.connection.rtt — the browser's own figure, not one this page measured. Chromium rounds it to 25 ms and Firefox does not publish it.</p>
 
-        // Initialize Chart.js
-        function initChart() {
-            const ctx = document.getElementById('pingChart').getContext('2d');
-            chartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Latency (ms)',
-                        data: [],
-                        borderColor: '#ffcc00',
-                        backgroundColor: 'rgba(255, 204, 0, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: 1,
-                        pointBackgroundColor: '#ffcc00',
-                        fill: true,
-                        tension: 0.3
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    animation: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { display: false },
-                        y: { 
-                            beginAtZero: true,
-                            grid: { color: '#262626' },
-                            ticks: { color: '#737373', font: { family: 'JetBrains Mono', size: 10 } }
-                        }
-                    }
-                }
-            });
-        }
-        initChart();
+      <h3 data-i18n>Reading the screen</h3>
+      <p class="muted small" data-i18n>The probe path only has to reach the server. A 404 is a perfectly good round trip and is timed like any other reply, so there is no need to hunt for a file that exists — some of these targets will log 404s in devtools and the measurement is unaffected.</p>
+      <p class="muted small" data-i18n>Each target is its own line. A red rule marks a probe that never came back; the line breaks there rather than bridging the gap. The first, cold request per host is left out.</p>
+      <p class="muted small" data-i18n>Everything stays in this tab: targets are kept in this browser's local storage, samples exist only in memory until you export them, and no result is sent anywhere. The requests themselves obviously do reach the hosts you name.</p>
+    </div>
+  </dialog>
 
-        setInterval(() => {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('en-US', { hour12: false });
-            document.getElementById('live-clock').innerHTML = `${timeString} <span class="bg-[#ffcc00] text-black px-1.5 py-0.5 ml-1 text-[10px] rounded uppercase">Local</span>`;
-        }, 1000);
-
-        function togglePing() {
-            const btn = document.getElementById('toggle-btn');
-            const targetInput = document.getElementById('target-input');
-            const intervalInput = document.getElementById('interval-input');
-            
-            if (isRunning) {
-                clearInterval(intervalId);
-                btn.innerHTML = '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg> START';
-                btn.className = "flex-1 sm:flex-none bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0";
-                targetInput.disabled = false;
-                intervalInput.disabled = false;
-                isRunning = false;
-                document.getElementById('stat-targets').innerText = "0";
-            } else {
-                const emptyState = document.getElementById('empty-state');
-                if (emptyState) emptyState.remove();
-                
-                let interval = parseInt(intervalInput.value);
-                if (isNaN(interval) || interval < 500) {
-                    interval = 5000;
-                    intervalInput.value = 5000;
-                }
-
-                btn.innerHTML = '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><rect x="4" y="4" width="12" height="12"></rect></svg> STOP';
-                btn.className = "flex-1 sm:flex-none bg-transparent border border-red-500 text-red-500 hover:bg-red-500 hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0";
-                targetInput.disabled = true;
-                intervalInput.disabled = true;
-                isRunning = true;
-                
-                pingCycle(); 
-                intervalId = setInterval(pingCycle, interval);
-            }
-        }
-
-        function clearLogs() {
-            // Stop if running
-            if (isRunning) togglePing();
-
-            // Reset variables
-            seq = 0;
-            pingHistory = [];
-            logData = [["Sequence", "Timestamp", "Target", "Latency (ms)", "Status"]];
-            
-            // Reset Chart
-            chartInstance.data.labels = [];
-            chartInstance.data.datasets[0].data = [];
-            chartInstance.update();
-
-            // Reset UI
-            document.getElementById('stat-targets').innerText = "0";
-            document.getElementById('stat-avg').innerText = "-- ms";
-            document.getElementById('stat-jitter').innerText = "-- ms";
-            document.getElementById('stat-count').innerText = "0";
-            document.getElementById('log-list').innerHTML = '<div id="empty-state" class="text-center text-[#525252] py-6">Awaiting target execution...</div>';
-        }
-
-        function clientSidePing(target) {
-            return new Promise((resolve) => {
-                let url = target.trim();
-                if (!url.startsWith('http')) url = 'https://' + url;
-
-                const start = performance.now();
-                const img = new Image();
-                
-                const timer = setTimeout(() => {
-                    img.src = ''; 
-                    resolve({ success: false });
-                }, 3000);
-
-                img.onload = img.onerror = () => {
-                    clearTimeout(timer);
-                    const latency = performance.now() - start;
-                    resolve({ success: true, latency: latency });
-                };
-
-                img.src = `${url}/favicon.ico?_=${new Date().getTime()}`;
-            });
-        }
-
-        function pingCycle() {
-            const rawInput = document.getElementById('target-input').value;
-            const targets = rawInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
-            
-            if (targets.length === 0) return;
-            
-            document.getElementById('stat-targets').innerText = targets.length;
-            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-            
-            targets.forEach(async (target) => {
-                seq++;
-                const currentSeq = seq;
-                
-                const data = await clientSidePing(target);
-                
-                if (data.success) {
-                    addLog(currentSeq, timestamp, target, data.latency, "OK");
-                    updateStats(data.latency, currentSeq);
-                } else {
-                    addLog(currentSeq, timestamp, target, 0, "TIMEOUT");
-                }
-            });
-        }
-
-        function addLog(sq, ts, tgt, lat, status) {
-            const list = document.getElementById('log-list');
-            const row = document.createElement('div');
-            
-            let statusColor = status === "OK" ? "text-green-500" : "text-red-500";
-            let latDisplay = status === "OK" ? `${lat.toFixed(1)} ms` : "--";
-
-            row.className = "flex py-1.5 px-3 hover:bg-[#171717] rounded transition-colors border border-transparent hover:border-[#262626]";
-            row.innerHTML = `
-                <div class="w-16 text-[#737373]">${sq}</div>
-                <div class="flex-1">${ts}</div>
-                <div class="flex-1 text-white">${tgt}</div>
-                <div class="w-32 text-right ${status === 'OK' ? 'text-[#ffcc00]' : 'text-[#737373]'}">${latDisplay}</div>
-                <div class="w-32 text-right ${statusColor}">${status}</div>
-            `;
-            
-            list.appendChild(row);
-            if (list.scrollHeight - list.scrollTop - list.clientHeight < 50) {
-                list.scrollTop = list.scrollHeight; 
-            }
-            // Store for export
-            logData.push([sq, ts, tgt, status === "OK" ? lat.toFixed(1) : 0, status]);
-        }
-
-        function updateStats(latency, sequenceStr) {
-            pingHistory.push(latency);
-            const count = pingHistory.length;
-            
-            // UI Stats
-            document.getElementById('stat-count').innerText = count;
-            const sum = pingHistory.reduce((a, b) => a + b, 0);
-            const avg = sum / count;
-            document.getElementById('stat-avg').innerText = `${avg.toFixed(1)} ms`;
-
-            if (count > 1) {
-                let varianceSum = 0;
-                for (let i = 1; i < count; i++) {
-                    varianceSum += Math.abs(pingHistory[i] - pingHistory[i - 1]);
-                }
-                const jitter = varianceSum / (count - 1);
-                document.getElementById('stat-jitter').innerText = `${jitter.toFixed(1)} ms`;
-            } else {
-                document.getElementById('stat-jitter').innerText = `0.0 ms`;
-            }
-
-            // Update Chart
-            chartInstance.data.labels.push(sequenceStr);
-            chartInstance.data.datasets[0].data.push(latency);
-            
-            // Keep chart from getting endlessly crushed (keep last 100 points)
-            if (chartInstance.data.labels.length > 100) {
-                chartInstance.data.labels.shift();
-                chartInstance.data.datasets[0].data.shift();
-            }
-            chartInstance.update();
-        }
-
-        // Handle XLSX, ODS, and CSV via SheetJS
-        function exportData(format) {
-            if (logData.length <= 1) return alert("No data to export.");
-            
-            const ws = XLSX.utils.aoa_to_sheet(logData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Diagnostics");
-            
-            const filename = `carino_diagnostics_${Date.now()}.${format}`;
-            XLSX.writeFile(wb, filename);
-        }
-
-        // Handle PDF generation via jsPDF
-        function exportPDF() {
-            if (logData.length <= 1) return alert("No data to export.");
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            // Styling & Header
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(18);
-            doc.text("Carino Systems - Diagnostic Report", 14, 22);
-            
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-            
-            // Gather stats
-            const avg = document.getElementById('stat-avg').innerText;
-            const jitter = document.getElementById('stat-jitter').innerText;
-            const total = document.getElementById('stat-count').innerText;
-            const avgNum = parseFloat(avg);
-            
-            // Analytical logic
-            let conclusion = "Network routing and connection stability appear nominal.";
-            if (avgNum > 500) conclusion = "Warning: High average latency detected. Connection may be degraded.";
-            if (avgNum === 0 || isNaN(avgNum)) conclusion = "Critical: Connection failed or timed out entirely.";
-
-            // Report Body
-            doc.setTextColor(0);
-            doc.setFontSize(12);
-            doc.text("Executive Summary", 14, 45);
-            doc.setFontSize(10);
-            doc.text(`This document serves as an automated record of client-side HTTP latency testing.`, 14, 52);
-            doc.text(`The sequence executed ${total} total requests against configured targets.`, 14, 58);
-            
-            doc.setFont("helvetica", "bold");
-            doc.text(`Global Average Latency: ${avg}`, 14, 68);
-            doc.text(`Global Jitter (Variance): ${jitter}`, 14, 74);
-            doc.text(`Automated Assessment: ${conclusion}`, 14, 80);
-
-            // Table of Logs
-            doc.autoTable({
-                startY: 90,
-                head: [logData[0]],
-                body: logData.slice(1),
-                theme: 'grid',
-                headStyles: { fillColor: [255, 204, 0], textColor: [0, 0, 0] },
-                styles: { fontSize: 8, cellPadding: 2 }
-            });
-
-            doc.save(`carino_report_${Date.now()}.pdf`);
-        }
-    </script>
+  <script src="carino-navbar.js" data-app="Ping" defer></script>
+  <script src="carino-lang.js" defer></script>
+  <script src="i18n.js" defer></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
