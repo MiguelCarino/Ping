@@ -57,19 +57,12 @@
         <input type="checkbox" id="optHidden" />
         <span data-i18n>Run in background tabs</span>
       </label>
+      <!-- The identifier rides here because it is the one thing from the old
+           connection strip a reader needs at a glance: it is what ties several
+           exported reports to the same machine. -->
+      <span class="cfield idtag"><i data-i18n>Client</i> <b id="clientId">—</b></span>
     </section>
     <p class="notice" id="notice" hidden></p>
-
-    <!-- The line itself. Measured before the run, never during it. -->
-    <section class="strip conn">
-      <span class="slabel" data-i18n>Connection</span>
-      <span class="cfield"><i data-i18n>Downlink</i> <b id="connSpeed" data-i18n>not measured</b></span>
-      <span class="cfield"><i data-i18n>Interface</i> <b id="connType" data-i18n>not published</b></span>
-      <span class="cfield"><i data-i18n>Reported</i> <b id="connEff">—</b></span>
-      <span class="cfield"><i data-i18n>Public host</i> <b id="connHost" data-i18n>not measured</b></span>
-      <span class="cfield"><i data-i18n>Client</i> <b id="clientId">—</b></span>
-      <button class="cs-btn tiny" id="btnSpeed" title="Measure downlink and the STUN round trip now" data-i18n>Test</button>
-    </section>
 
     <!-- Headline numbers -->
     <section class="tiles" aria-label="Summary">
@@ -84,12 +77,9 @@
 
     <!-- Everything below fills whatever height is left and scrolls internally. -->
     <div class="grid">
-      <section class="panel pane cardspane">
-        <div class="pane-head">
-          <h2 data-i18n>Per target</h2>
-        </div>
-        <div class="pane-body cards" id="cards" aria-label="Per-target results"></div>
-      </section>
+      <!-- No panel, no heading: the cards name their own targets, so the chrome
+           around them was two lines saying nothing. They scroll themselves. -->
+      <div class="cards" id="cards" aria-label="Per-target results"></div>
 
       <div class="rightcol">
         <section class="panel pane chartpane">
@@ -156,6 +146,13 @@
       </ul>
 
       <h3 data-i18n>Cross-checks on the same screen</h3>
+      <div class="connrow">
+        <span class="cfield"><i data-i18n>Downlink</i> <b id="connSpeed" data-i18n>not measured</b></span>
+        <span class="cfield"><i data-i18n>Interface</i> <b id="connType" data-i18n>not published</b></span>
+        <span class="cfield"><i data-i18n>Reported</i> <b id="connEff">—</b></span>
+        <span class="cfield"><i data-i18n>Public host</i> <b id="connHost" data-i18n>not measured</b></span>
+        <button class="cs-btn tiny" id="btnSpeed" title="Measure downlink and the STUN round trip now" data-i18n>Test</button>
+      </div>
       <p data-i18n-html><strong>STUN</strong> is a single UDP exchange with no TLS and no server-side work — the closest a browser gets to a raw round trip. It is the floor: what a target reads above it is protocol and application overhead, not distance. <strong>Downlink</strong> is measured before the run and never during it, because a saturated link has a full queue and a full queue adds delay to everything behind it.</p>
       <p class="muted small"><span data-i18n>The STUN exchange is the one probe that leaves for a host you did not name. It runs when you press Start or Test, never on page load, and it goes to</span> <code id="stunHost"></code>. <span data-i18n>It returns your public address as a side effect — that is what a server-reflexive candidate is.</span></p>
 

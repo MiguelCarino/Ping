@@ -97,13 +97,18 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .notice.warn{color:var(--accent-hi);border-color:var(--accent-dim);background:var(--accent-faint);}
 .notice.err{color:#fca5a5;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.07);}
 
-/* ---- connection strip ----
-   One line: what the link is, measured before the run. Replaces the footer
-   that used to carry the baselines. */
-.strip.conn{gap:14px;}
+/* ---- connection fields ----
+   The strip these lived in is gone. The readouts moved into the Method dialog,
+   where the prose that explains what they mean already is; only the client id
+   stayed on screen, at the end of the targets row. */
 .cfield{display:flex;align-items:baseline;gap:6px;min-width:0;font-family:var(--mono);font-size:.68rem;}
 .cfield i{font-style:normal;font-size:.55rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
 .cfield b{color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22ch;}
+/* The client id ends the targets row and must not shove the inputs about: it
+   never grows, never wraps, and is pushed to the far edge. */
+.cfield.idtag{flex:0 0 auto;margin-left:auto;}
+/* The readouts the strip used to hold, now inside the dialog. */
+.connrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 14px;}
 /* The reverse-resolved host is the one field worth reading in full — it names
    the ISP and often the access technology — so it gets the room the others do
    not need. The full value is in the title either way. */
@@ -148,7 +153,12 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .logpane{flex:3 1 0;min-height:130px;}
 
 /* ---- per-target cards ---- */
-.cards{padding:10px;display:flex;flex-direction:column;gap:10px;}
+/* The cards are a bare column in the grid now — no panel, no heading. They
+   carry their own scroll (the .pane-body that used to do it went with the
+   chrome) and no frame of their own: every card already has one, and a border
+   around a list of bordered things is just a second line. */
+.cards{min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 2px 2px 0;
+  display:flex;flex-direction:column;gap:10px;}
 .cards>.muted{font-size:.75rem;line-height:1.5;padding:4px 2px;}
 .tcard{border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);padding:10px 11px;
   display:flex;flex-direction:column;gap:8px;min-width:0;flex-shrink:0;}
@@ -259,11 +269,9 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .tiles::-webkit-scrollbar{display:none;}
   .stat-tile{flex:0 0 118px;}
   .strip .path{max-width:none;}
-  /* Six labelled readouts will not fit a phone; the strip scrolls sideways
-     rather than growing three rows tall and eating the chart. */
-  .strip.conn{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
-  .strip.conn::-webkit-scrollbar{display:none;}
-  .strip.conn > *{flex:0 0 auto;}
+  /* The client id is the last thing worth losing on a phone, but it is also
+     the least urgent — margin-left:auto would strand it on a row of its own. */
+  .cfield.idtag{margin-left:0;}
   .lhead .c-ph,.lrow .c-ph{display:none;}
   .lhead,.lrow{grid-template-columns:40px 66px minmax(84px,1fr) 74px 100px;}
   }
@@ -279,7 +287,7 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
    landscape (below) the opposite is true and the two-column layout stays. */
 @media (max-width:860px) and (min-height:620px){
   .grid{grid-template-columns:1fr;grid-template-rows:minmax(0,auto) minmax(0,1fr);}
-  .cardspane{max-height:min(190px,23dvh);}
+  .cards{max-height:min(190px,23dvh);}
   .cards{flex-direction:row;overflow-x:auto;padding:8px;}
   .cards>.tcard{flex:0 0 230px;}
   .cards>.muted{flex:1 1 auto;}
@@ -301,7 +309,7 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 @media (max-height:760px){
   .chartpane{min-height:110px;}
   .logpane{min-height:100px;}
-  .cardspane{max-height:min(170px,22dvh);}
+  .cards{max-height:min(170px,22dvh);}
 }
 @media (max-height:700px){
   .stat-tile .st-sub{display:none;}
@@ -309,14 +317,14 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .stat-tile .st-value{font-size:1.02rem;}
   .chartpane{min-height:86px;}
   .logpane{min-height:78px;}
-  .cardspane{max-height:min(140px,24dvh);}
+  .cards{max-height:min(140px,24dvh);}
 }
 @media (max-height:460px){
     .strip{padding:5px 9px;}
   .field{height:28px;}
   .chartpane{min-height:60px;}
   .logpane{min-height:54px;}
-  .cardspane{max-height:min(120px,34dvh);}
+  .cards{max-height:min(120px,34dvh);}
   .pane-head{padding:5px 10px;}
   .pane-head h2{font-size:.72rem;}
 }
