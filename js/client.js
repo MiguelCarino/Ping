@@ -113,3 +113,69 @@ export function connectionLabel(conn, t = (x) => x) {
   if (conn.rttHint != null) bits.push(`~${conn.rttHint} ms`);
   return bits.length ? bits.join(' · ') : t('not published by this browser');
 }
+
+/* ---- reverse DNS --------------------------------------------------------- */
+
+/**
+ * PTR lookup for the public address, so the strip can say
+ * "acceso-201-103-33-159.prod-infinitum.com.mx" rather than a bare number —
+ * the hostname usually names the ISP and the access technology, which is the
+ * part a reader of the report can actually act on.
+ *
+ * A browser has no resolver API, so this goes over DNS-over-HTTPS. That is a
+ * request to a third party, which is why it runs only inside the connection
+ * step the user already triggered (Start or Test), never on page load, and why
+ * the resolver is named on screen next to the result.
+ *
+ * Cloudflare first, Google as fallback. Failure is not an error: plenty of
+ * addresses have no PTR at all, and the caller simply keeps showing the IP.
+ */
+export async function reverseDNS(ip, { timeout = 3500 } = {}) {
+  if (!ip) return null;
+  const name = ip.includes(':') ? ip6Arpa(ip) : ip4Arpa(ip);
+  if (!name) return null;
+
+  const endpoints = [
+    { url: `https://cloudflare-dns.com/dns-query?name=${name}&type=PTR`, headers: { accept: 'application/dns-json' } },
+    { url: `https://dns.google/resolve?name=${name}&type=PTR`, headers: { accept: 'application/json' } },
+  ];
+
+  for (const ep of endpoints) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    try {
+      const res = await fetch(ep.url, { headers: ep.headers, signal: ctrl.signal, cache: 'no-store', credentials: 'omit' });
+      if (!res.ok) continue;
+      const j = await res.json();
+      const ans = (j.Answer || []).filter((a) => a.type === 12 && a.data);
+      if (ans.length) return String(ans[0].data).replace(/\.$/, '');
+      if (j.Status === 3 || j.Status === 0) return null;   // NXDOMAIN, or no PTR
+    } catch {
+      // try the next resolver
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+function ip4Arpa(ip) {
+  const p = ip.split('.');
+  if (p.length !== 4 || p.some((x) => !/^\d{1,3}$/.test(x))) return null;
+  return `${p[3]}.${p[2]}.${p[1]}.${p[0]}.in-addr.arpa`;
+}
+
+// IPv6 PTR is the 32 nibbles reversed. Expand the :: shorthand first.
+function ip6Arpa(ip) {
+  const parts = ip.split('::');
+  if (parts.length > 2) return null;
+  const head = parts[0] ? parts[0].split(':') : [];
+  const tail = parts[1] !== undefined ? (parts[1] ? parts[1].split(':') : []) : null;
+  let groups;
+  if (tail === null) groups = head;
+  else groups = [...head, ...Array(8 - head.length - tail.length).fill('0'), ...tail];
+  if (groups.length !== 8) return null;
+  const nibbles = groups.map((g) => g.padStart(4, '0')).join('');
+  if (!/^[0-9a-f]{32}$/i.test(nibbles)) return null;
+  return nibbles.split('').reverse().join('.').toLowerCase() + '.ip6.arpa';
+}

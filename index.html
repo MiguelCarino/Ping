@@ -16,6 +16,7 @@
   <header class="cs-header" data-carino-strip>
     <div class="cs-right" data-carino-actions>
       <span class="live-chip" id="modeChip" title="Measurement state">IDLE</span>
+      <span class="verdict-badge" id="verdict" data-key="idle" title="No data yet." data-i18n>No data</span>
       <select class="cs-btn cs-select" id="intervalSel" title="Time between probes">
         <option value="500">0.5s</option>
         <option value="1000">1s</option>
@@ -46,7 +47,7 @@
     <section class="strip targets">
       <label class="slabel" for="targetInput" data-i18n>Targets</label>
       <input type="text" id="targetInput" class="field grow"
-             value="carino.systems, cloudflare.com, github.com"
+             value="8.8.8.8, cloudflare.com"
              placeholder="example.com, another.org"
              aria-label="Targets, comma separated" />
       <input type="text" id="pathInput" class="field path" value="/favicon.ico"
@@ -65,7 +66,7 @@
       <span class="cfield"><i data-i18n>Downlink</i> <b id="connSpeed" data-i18n>not measured</b></span>
       <span class="cfield"><i data-i18n>Interface</i> <b id="connType" data-i18n>not published</b></span>
       <span class="cfield"><i data-i18n>Reported</i> <b id="connEff">—</b></span>
-      <span class="cfield"><i data-i18n>Public address</i> <b id="connIP" data-i18n>not measured</b></span>
+      <span class="cfield"><i data-i18n>Public host</i> <b id="connHost" data-i18n>not measured</b></span>
       <span class="cfield"><i data-i18n>Client</i> <b id="clientId">—</b></span>
       <button class="cs-btn tiny" id="btnSpeed" title="Measure downlink and the STUN round trip now" data-i18n>Test</button>
     </section>
@@ -80,8 +81,6 @@
       <div class="stat-tile"><span class="st-label" data-i18n>Sent</span><b class="st-value num" id="stSent">0</b><span class="st-sub" data-i18n>requests issued</span></div>
       <div class="stat-tile"><span class="st-label">STUN</span><b class="st-value num" id="stStun">—</b><span class="st-sub" data-i18n>UDP floor, no TLS</span></div>
     </section>
-
-    <p class="verdict" id="verdict" data-key="idle" data-i18n>No data yet.</p>
 
     <!-- Everything below fills whatever height is left and scrolls internally. -->
     <div class="grid">

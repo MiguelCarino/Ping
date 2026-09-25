@@ -129,18 +129,24 @@ export function combine(seriesList) {
 
 /** Verdict bands, in the units people actually feel. Deliberately about the
     experience, not a letter grade: 40 ms with 5% loss is a worse line than
-    180 ms clean, and the wording has to be able to say that. */
+    180 ms clean, and the wording has to be able to say that.
+
+    `short` is the badge in the navbar; `text` is the sentence behind it, which
+    is what the tooltip and the report print. The badge has to survive being two
+    words wide next to eleven other controls, so it names the conclusion and
+    leaves the reasoning to the sentence. */
 export function verdict(s) {
-  if (!s.sent) return { key: 'idle', text: 'No data yet.' };
-  if (s.loss >= 100) return { key: 'bad', text: 'No response at all — target unreachable from this browser.' };
-  if (s.loss >= 5) return { key: 'bad', text: 'Loss above 5% — this link will stutter on calls and stall on transfers.' };
-  if (s.loss > 0) return { key: 'warn', text: 'Some requests never came back — intermittent loss.' };
-  if (s.p95 == null) return { key: 'idle', text: 'No data yet.' };
-  if (s.p95 > 600) return { key: 'bad', text: 'Very high latency — interactive use will feel broken.' };
-  if (s.p95 > 250) return { key: 'warn', text: 'High latency — noticeable lag on anything interactive.' };
-  if (s.jitter != null && s.jitter > 60) return { key: 'warn', text: 'Latency is steady on average but swings a lot — poor for real-time audio and video.' };
-  if (s.p95 > 120) return { key: 'ok', text: 'Usable. Fine for browsing, adequate for calls.' };
-  return { key: 'good', text: 'Low and steady. Nothing here would hold a connection back.' };
+  const v = (key, short, text) => ({ key, short, text });
+  if (!s.sent) return v('idle', 'No data', 'No data yet.');
+  if (s.loss >= 100) return v('bad', 'No reply', 'No response at all — target unreachable from this browser.');
+  if (s.loss >= 5) return v('bad', 'Packet loss', 'Loss above 5% — this link will stutter on calls and stall on transfers.');
+  if (s.loss > 0) return v('warn', 'Some loss', 'Some requests never came back — intermittent loss.');
+  if (s.p95 == null) return v('idle', 'No data', 'No data yet.');
+  if (s.p95 > 600) return v('bad', 'Very slow', 'Very high latency — interactive use will feel broken.');
+  if (s.p95 > 250) return v('warn', 'Slow', 'High latency — noticeable lag on anything interactive.');
+  if (s.jitter != null && s.jitter > 60) return v('warn', 'Unstable', 'Latency is steady on average but swings a lot — poor for real-time audio and video.');
+  if (s.p95 > 120) return v('ok', 'Usable', 'Usable. Fine for browsing, adequate for calls.');
+  return v('good', 'Healthy', 'Low and steady. Nothing here would hold a connection back.');
 }
 
 /* ---- report helpers --------------------------------------------------------

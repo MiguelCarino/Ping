@@ -104,6 +104,10 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .cfield{display:flex;align-items:baseline;gap:6px;min-width:0;font-family:var(--mono);font-size:.68rem;}
 .cfield i{font-style:normal;font-size:.55rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
 .cfield b{color:var(--accent);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22ch;}
+/* The reverse-resolved host is the one field worth reading in full — it names
+   the ISP and often the access technology — so it gets the room the others do
+   not need. The full value is in the title either way. */
+#connHost{max-width:38ch;}
 
 /* ---- headline tiles ---- */
 .tiles{flex-shrink:0;display:grid;grid-template-columns:repeat(7,1fr);gap:var(--gap);}
@@ -118,12 +122,18 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .stat-tile.bad{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.05);}
 .stat-tile.bad .st-value{color:var(--err);}
 
-.verdict{flex-shrink:0;font-size:.8rem;line-height:1.4;padding:9px 13px;border-radius:7px;border:1px solid var(--border);
-  background:var(--bg-elev);color:var(--text-sec);}
-.verdict[data-key="good"]{border-color:rgba(34,197,94,.4);color:#86efac;}
-.verdict[data-key="ok"]{border-color:var(--border-hi);color:var(--text-sec);}
-.verdict[data-key="warn"]{border-color:var(--accent-dim);color:var(--accent-hi);background:var(--accent-faint);}
-.verdict[data-key="bad"]{border-color:rgba(239,68,68,.45);color:#fca5a5;background:rgba(239,68,68,.06);}
+/* The verdict is a navbar badge now, not a bar across the page. It names the
+   conclusion in one or two words and carries the full sentence in its tooltip,
+   which is also what the report prints. Prefixed with `body` for the same
+   reason the other navbar rules are: carino-navbar.js injects its stylesheet
+   after this file, so equal weight loses on source order. */
+.verdict-badge{font-family:var(--mono);font-size:.6rem;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;white-space:nowrap;border:1px solid var(--border);border-radius:4px;
+  padding:3px 7px;color:var(--text-muted);cursor:help;transition:.15s;}
+.verdict-badge[data-key="good"]{color:var(--ok);border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.09);}
+.verdict-badge[data-key="ok"]{color:var(--text-sec);border-color:var(--border-hi);}
+.verdict-badge[data-key="warn"]{color:var(--accent-hi);border-color:var(--accent-dim);background:var(--accent-faint);}
+.verdict-badge[data-key="bad"]{color:#fca5a5;border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.09);}
 
 /* ---- the growing area ---- */
 .grid{flex:1;min-height:0;display:grid;grid-template-columns:minmax(280px,340px) 1fr;gap:var(--gap);}
@@ -256,7 +266,6 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .strip.conn > *{flex:0 0 auto;}
   .lhead .c-ph,.lrow .c-ph{display:none;}
   .lhead,.lrow{grid-template-columns:40px 66px minmax(84px,1fr) 74px 100px;}
-  .verdict{font-size:.74rem;padding:7px 10px;}
   }
 @media (max-width:520px){
   .lhead,.lrow{grid-template-columns:60px minmax(74px,1fr) 70px 88px;}
@@ -284,8 +293,9 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 
    The page may not scroll, so when height runs out something has to give, and
    it gives in a deliberate order: first the tiles' caption line, then the
-   panes' minimums, then the verdict sentence — which is the one thing on
-   screen whose meaning is already carried by the colour of the loss tile.
+   panes' minimums, then the connection strip's labels. The verdict used to be
+   third on that list; moving it into the navbar as a badge removed a whole row
+   from the layout and took it off the list entirely.
    The thresholds were set by measuring, not guessed: 360x640 and 740x360 both
    overflowed before these existed. */
 @media (max-height:760px){
@@ -297,13 +307,11 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .stat-tile .st-sub{display:none;}
   .stat-tile{padding:6px 11px;}
   .stat-tile .st-value{font-size:1.02rem;}
-  .verdict{padding:6px 10px;font-size:.72rem;}
   .chartpane{min-height:86px;}
   .logpane{min-height:78px;}
   .cardspane{max-height:min(140px,24dvh);}
 }
 @media (max-height:460px){
-  .verdict{display:none;}
     .strip{padding:5px 9px;}
   .field{height:28px;}
   .chartpane{min-height:60px;}

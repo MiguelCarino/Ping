@@ -44,7 +44,7 @@ Pressing **Start** measures the line first and only then begins probing. That or
 
 - **Downlink** — six parallel streams of CDN assets, bytes read back from `encodedBodySize` on the Resource Timing entries (exposed because cdnjs sends `Timing-Allow-Origin`). Slow start is discarded. A lower bound on the line, not a substitute for a speed test against a nearby server, and the UI says so.
 - **STUN round trip** — one UDP exchange, no TLS, no server-side work. The floor to compare HTTP readings against.
-- **Public address** — falls out of the same STUN exchange; a server-reflexive candidate *is* the address the server saw.
+- **Public host** — the STUN exchange returns the public address (a server-reflexive candidate *is* the address the server saw), and a PTR lookup over DNS-over-HTTPS turns it into a hostname. `acceso-201-103-33-159.prod-infinitum.com.mx` names the ISP and often the access technology; `201.103.33.159` names nothing. The address stays in the tooltip and the report. A browser has no resolver API, so this is a request to Cloudflare's DoH endpoint (Google as fallback) — it runs only inside the connection step you triggered, never on page load, and plenty of addresses have no PTR at all, in which case the field simply keeps showing the address.
 - **Client identifier** — a random `CP-xxxx-xxxx` kept in local storage so several reports from the same laptop can be told apart. Not a fingerprint, not derived from hardware, cleared with site data.
 
 ### Why it cannot name your network interface
@@ -55,7 +55,7 @@ There is no web API for it, and that is deliberate rather than missing. Chrome a
 
 Static site, no build step — serve the folder or open it on GitHub Pages.
 
-Enter comma-separated hostnames, pick an interval, press **Start**. Each target runs its own self-correcting loop: the next wait is measured from when the last probe *began*, and a target never has two probes outstanding, so a 500 ms interval against a 900 ms host degrades to back-to-back probes rather than piling up a queue and measuring itself.
+Defaults are `8.8.8.8` and `cloudflare.com`. Enter comma-separated hostnames, pick an interval, press **Start**. Each target runs its own self-correcting loop: the next wait is measured from when the last probe *began*, and a target never has two probes outstanding, so a 500 ms interval against a 900 ms host degrades to back-to-back probes rather than piling up a queue and measuring itself.
 
 The probe path defaults to `/favicon.ico` — small, present almost everywhere, and cheap to serve. Point it at a health endpoint instead if you have one.
 
@@ -73,6 +73,8 @@ Peaks are ranked by how far a sample sat **above its own target's median**, not 
 
 ## Shape
 
+The verdict is a **badge in the navbar**, not a bar across the page: it names the conclusion in a word (*Healthy*, *Usable*, *Slow*, *Packet loss*, *No reply*) and carries the full sentence in its tooltip, which is also what the report prints. That removed a whole row from the layout.
+
 One screen, no page scroll. The body is exactly the viewport tall with `overflow:hidden`; the shared navbar takes its 60px and the app takes the rest. The target cards and the sample log scroll inside their own panes, and the method notes live in a dialog rather than below a fold. Verified at ten viewport sizes from 1920×1080 down to 360×640 and 740×360 (landscape phone), idle and mid-run, in both axes.
 
 When height runs short the layout degrades in a deliberate order rather than growing a scrollbar: the tiles' caption line goes first, then the panes' minimum heights, then the verdict sentence — which is the one element whose meaning the colour of the loss tile already carries.
@@ -88,7 +90,7 @@ js/stats.js    Series, quantiles, jitter, loss, verdict bands
 js/viz.js      dependency-free canvas chart + SVG sparkline + phase bar
 js/export.js   CSV native; SheetJS loaded from ./vendor on demand
 js/speed.js    downlink throughput, parallel streams, before the run
-js/client.js   client identifier, browser/platform, what the OS publishes
+js/client.js   client identifier, browser/platform, reverse DNS, what the OS publishes
 js/report.js   the standalone printable report (Topo's approach, no PDF lib)
 js/app.js      targets, per-target loops, rendering
 vendor/        xlsx (vendored, never a CDN)
@@ -98,7 +100,7 @@ carino-navbar.js · carino-clock.js · carino-lang.js   the shared fleet chrome
 
 SheetJS is fetched only when someone presses XLSX or ODS, so a page view that never exports a spreadsheet pays none of it.
 
-Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet.
+Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet. **The report is translated too** — every heading, column, verdict and the whole method paragraph, with the document's own `lang` attribute set to match. That is checked programmatically rather than by eye: a test walks every `t()` key reachable from the report and asserts it resolves in all four non-English locales.
 
 ## Licence
 

@@ -182,6 +182,7 @@ function lossTable(lossEvents, t) {
  */
 export function reportHtml(model, t = (x) => x) {
   const { summary, env, speed, stun, run } = model;
+  const publicHost = model.hostname || (stun && stun.publicIP) || null;
   const conn = env.connection;
   const title = t('Network latency report');
   const when = new Date(run.started);
@@ -201,7 +202,9 @@ export function reportHtml(model, t = (x) => x) {
     ${row(t('Browser'), env.browser)}
     ${row(t('Platform'), env.platform)}
     ${row(t('Time zone'), `${env.timezone} (UTC${env.utcOffsetMin >= 0 ? '+' : ''}${Math.round(env.utcOffsetMin / 60)})`)}
-    ${row(t('Public address'), stun && stun.publicIP ? `${stun.publicIP} (${stun.family})` : t('not determined'))}
+    ${row(t('Public host'), publicHost
+    ? (model.hostname && stun && stun.publicIP ? `${model.hostname} (${stun.publicIP})` : publicHost)
+    : t('not determined'))}
     ${row(t('Run length'), dur ? `${dur} s` : '—')}
     ${row(t('Probe interval'), `${run.interval} ms`)}
     ${row(t('Probe path'), run.path)}

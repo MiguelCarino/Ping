@@ -16,13 +16,13 @@ import { Series, combine, verdict, extremes, lossEvents } from './stats.js';
 import { drawChart, sparkline, seriesColor, phaseBar } from './viz.js';
 import { exportCSV, exportSheet } from './export.js';
 import { measureDownlink, fmtMbps } from './speed.js';
-import { environment, connectionLabel } from './client.js';
+import { environment, connectionLabel, reverseDNS } from './client.js';
 import { reportHtml, openReport } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 const t = (k) => (window.t ? window.t(k) : k);
 
-const STORE = 'carino-ping/v1';
+const STORE = 'carino-ping/v2';
 const STUN_SERVER = 'stun:stun.l.google.com:19302';
 
 /* One timer, not two. A separate timeout selector asked the user to reason
@@ -217,9 +217,12 @@ function paint() {
   lossTile.classList.toggle('bad', sum.loss >= 5);
   lossTile.classList.toggle('warn', sum.loss > 0 && sum.loss < 5);
 
+  // The verdict lives in the navbar now: the badge names the conclusion, the
+  // tooltip carries the sentence that explains it.
   const v = verdict(sum);
   const vEl = $('verdict');
-  vEl.textContent = t(v.text);
+  vEl.textContent = t(v.short);
+  vEl.title = t(v.text);
   vEl.dataset.key = v.key;
 
   renderCards();
@@ -318,16 +321,19 @@ function applyFilter() {
 
    The interface is not here because it cannot be. See client.js. */
 
-const conn = { speed: null, stun: null, env: null, testing: false };
+const conn = { speed: null, stun: null, hostname: null, env: null, testing: false };
 
 function renderConnection() {
   const e = conn.env || environment();
   conn.env = e;
   $('connType').textContent = e.connection.type || t('not published');
   $('connEff').textContent = connectionLabel(e.connection, t);
-  $('connIP').textContent = conn.stun && conn.stun.publicIP
-    ? conn.stun.publicIP
-    : t('not measured');
+  // Hostname when the PTR resolves, the address when it does not — a bare
+  // number says far less than "…prod-infinitum.com.mx", which names the ISP.
+  const ip = conn.stun && conn.stun.publicIP;
+  const el = $('connHost');
+  el.textContent = conn.hostname || ip || t('not measured');
+  el.title = ip ? (conn.hostname ? `${conn.hostname} · ${ip}` : ip) : '';
   $('stStun').textContent = conn.stun && conn.stun.rtt != null ? ms(conn.stun.rtt) : '—';
   $('connSpeed').textContent = conn.speed && conn.speed.mbps != null
     ? fmtMbps(conn.speed.mbps)
@@ -339,6 +345,12 @@ async function measureStun() {
   $('stStun').textContent = t('…');
   conn.stun = await stunProbe(STUN_SERVER);
   renderConnection();
+  // Reverse lookup is a separate third-party request, so it happens here —
+  // inside the step the user asked for — and never blocks the numbers.
+  if (conn.stun && conn.stun.publicIP) {
+    conn.hostname = await reverseDNS(conn.stun.publicIP);
+    renderConnection();
+  }
 }
 
 /** Throughput first, then STUN. Returns when the line is idle again. */
@@ -427,10 +439,11 @@ function buildReport() {
     extremes: extremes(list, 5),
     lossEvents: lossEvents(list),
     verdict: t(verdict(sum).text),
-    method: METHOD,
+    method: t(METHOD),          // translated like everything else on the sheet
     env: conn.env || environment(),
     speed: conn.speed,
     stun: conn.stun,
+    hostname: conn.hostname,
     run: {
       started: state.startedAt || Date.now(),
       ended: state.endedAt || Date.now(),
