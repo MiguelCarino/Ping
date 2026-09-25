@@ -4,7 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carino Ping</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- SheetJS for XLSX and ODS export -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- jsPDF and AutoTable for PDF Report generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
         body { font-family: 'JetBrains Mono', monospace; }
@@ -22,18 +35,21 @@
 <body class="bg-[#050505] text-[#d4d4d4] h-screen w-screen overflow-hidden flex flex-col p-4 text-xs lg:text-sm">
 
     <!-- HEADER -->
-    <header class="flex justify-between items-center border-b border-[#262626] pb-3 mb-4 shrink-0">
-        <div class="flex items-center gap-4">
+    <header class="flex justify-between items-center border-b border-[#262626] pb-3 mb-4 shrink-0 overflow-x-auto">
+        <div class="flex items-center gap-4 shrink-0 pr-4">
             <h1 class="text-white font-bold text-lg"><span class="text-[#ffcc00]">Carino</span> Ping</h1>
             <div id="live-clock" class="text-white font-bold tracking-widest hidden sm:block">
-                00:00:00 <span class="bg-[#ffcc00] text-black px-1.5 py-0.5 ml-1 text-[10px] rounded uppercase">Local Time</span>
+                00:00:00 <span class="bg-[#ffcc00] text-black px-1.5 py-0.5 ml-1 text-[10px] rounded uppercase">Local</span>
             </div>
             <span class="text-[#525252] hidden md:block">Client-Side HTTP Latency.</span>
         </div>
-        <div class="flex gap-2">
-            <button onclick="exportCSV()" class="border border-[#262626] text-[#a3a3a3] hover:text-[#ffcc00] hover:border-[#ffcc00] px-3 py-1 transition-colors flex items-center gap-2">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                EXPORT CSV
+        <div class="flex gap-2 shrink-0">
+            <button onclick="exportData('csv')" class="border border-[#262626] text-[#a3a3a3] hover:text-[#ffcc00] hover:border-[#ffcc00] px-3 py-1 transition-colors rounded-sm">CSV</button>
+            <button onclick="exportData('xlsx')" class="border border-[#262626] text-[#a3a3a3] hover:text-green-400 hover:border-green-400 px-3 py-1 transition-colors rounded-sm">XLSX</button>
+            <button onclick="exportData('ods')" class="border border-[#262626] text-[#a3a3a3] hover:text-blue-400 hover:border-blue-400 px-3 py-1 transition-colors rounded-sm">ODS</button>
+            <button onclick="exportPDF()" class="border border-[#262626] text-black bg-[#ffcc00] hover:bg-white px-3 py-1 transition-colors font-bold rounded-sm flex items-center gap-2">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                PDF REPORT
             </button>
         </div>
     </header>
@@ -43,19 +59,25 @@
         
         <!-- Controls -->
         <div class="border border-[#262626] rounded-md p-4 flex-1 bg-[#0a0a0a]">
-            <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-3">Target Configuration (Websites Only)</div>
-            <div class="flex gap-2">
-                <input type="text" id="target-input" value="8.8.8.8, google.com" class="bg-black border border-[#404040] text-white px-3 py-1.5 flex-[3] focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" placeholder="Domains (must host a web server)...">
+            <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-3 flex justify-between">
+                <span>Target Configuration (Websites Only)</span>
+            </div>
+            <div class="flex gap-2 flex-wrap sm:flex-nowrap">
+                <input type="text" id="target-input" value="google.com, 8.8.8.8" class="bg-black border border-[#404040] text-white px-3 py-1.5 flex-[3] min-w-[150px] focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" placeholder="Domains...">
                 
                 <div class="relative flex-[1] flex items-center min-w-[80px]">
-                    <input type="number" id="interval-input" value="1500" min="500" class="w-full bg-black border border-[#404040] text-white pl-3 pr-8 py-1.5 focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" title="Ping Interval">
+                    <input type="number" id="interval-input" value="5000" min="500" class="w-full bg-black border border-[#404040] text-white pl-3 pr-8 py-1.5 focus:outline-none focus:border-[#ffcc00] rounded-sm transition-colors disabled:opacity-50" title="Ping Interval">
                     <span class="absolute right-3 text-[#737373] text-[10px] pointer-events-none">ms</span>
                 </div>
 
-                <button id="toggle-btn" onclick="togglePing()" class="bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-6 py-1.5 transition-colors rounded-sm flex items-center gap-2 shrink-0">
-                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg>
-                    START
-                </button>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button id="toggle-btn" onclick="togglePing()" class="flex-1 sm:flex-none bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg> START
+                    </button>
+                    <button onclick="clearLogs()" class="flex-1 sm:flex-none border border-[#404040] text-[#a3a3a3] hover:text-white hover:border-white px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> CLEAR
+                    </button>
+                </div>
             </div>
             <div class="mt-3 flex items-center gap-4 text-[10px]">
                 <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500"></span> Online</div>
@@ -79,7 +101,7 @@
             <div class="flex-1 pl-4">
                 <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Global Jitter</div>
                 <div class="text-white text-2xl lg:text-3xl font-bold" id="stat-jitter">-- ms</div>
-                <div class="text-[#525252] text-[10px] uppercase mt-1">Avg Absolute Variance</div>
+                <div class="text-[#525252] text-[10px] uppercase mt-1">Avg Abs Variance</div>
             </div>
             <div class="flex-1 pl-4">
                 <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-1">Sent</div>
@@ -89,18 +111,31 @@
         </div>
     </div>
 
-    <!-- LOG CONTAINER -->
-    <div class="flex-1 min-h-0 border border-[#262626] rounded-md bg-[#0a0a0a] flex flex-col">
-        <div class="flex border-b border-[#262626] text-[#737373] text-[10px] uppercase tracking-widest p-3 bg-[#0a0a0a]">
-            <div class="w-16">SEQ</div>
-            <div class="flex-1">TIMESTAMP</div>
-            <div class="flex-1">TARGET</div>
-            <div class="w-32 text-right">LATENCY (HTTP)</div>
-            <div class="w-32 text-right">STATUS</div>
+    <!-- MAIN CONTENT AREA (Table + Chart stacked) -->
+    <div class="flex-1 min-h-0 flex flex-col gap-4">
+        
+        <!-- LOG CONTAINER -->
+        <div class="flex-[3] min-h-0 border border-[#262626] rounded-md bg-[#0a0a0a] flex flex-col">
+            <div class="flex border-b border-[#262626] text-[#737373] text-[10px] uppercase tracking-widest p-3 bg-[#0a0a0a] shrink-0">
+                <div class="w-16">SEQ</div>
+                <div class="flex-1">TIMESTAMP</div>
+                <div class="flex-1">TARGET</div>
+                <div class="w-32 text-right">LATENCY (HTTP)</div>
+                <div class="w-32 text-right">STATUS</div>
+            </div>
+            <div id="log-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <div id="empty-state" class="text-center text-[#525252] py-6">Awaiting target execution...</div>
+            </div>
         </div>
-        <div id="log-list" class="flex-1 overflow-y-auto p-2 space-y-1">
-            <div class="text-center text-[#525252] py-10">Awaiting target execution...</div>
+
+        <!-- CHART CONTAINER -->
+        <div class="flex-[2] min-h-0 border border-[#262626] rounded-md bg-[#0a0a0a] p-3 flex flex-col">
+            <div class="text-[#737373] text-[10px] uppercase tracking-widest mb-2 shrink-0">Global Latency Over Time</div>
+            <div class="flex-1 relative w-full h-full min-h-[100px]">
+                <canvas id="pingChart"></canvas>
+            </div>
         </div>
+
     </div>
 
     <script>
@@ -109,6 +144,44 @@
         let seq = 0;
         let pingHistory = [];
         let logData = [["Sequence", "Timestamp", "Target", "Latency (ms)", "Status"]];
+        let chartInstance = null;
+
+        // Initialize Chart.js
+        function initChart() {
+            const ctx = document.getElementById('pingChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Latency (ms)',
+                        data: [],
+                        borderColor: '#ffcc00',
+                        backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 1,
+                        pointBackgroundColor: '#ffcc00',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            beginAtZero: true,
+                            grid: { color: '#262626' },
+                            ticks: { color: '#737373', font: { family: 'JetBrains Mono', size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+        initChart();
 
         setInterval(() => {
             const now = new Date();
@@ -124,22 +197,23 @@
             if (isRunning) {
                 clearInterval(intervalId);
                 btn.innerHTML = '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"></path></svg> START';
-                btn.className = "bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-6 py-1.5 transition-colors rounded-sm flex items-center gap-2 shrink-0";
+                btn.className = "flex-1 sm:flex-none bg-transparent border border-[#ffcc00] text-[#ffcc00] hover:bg-[#ffcc00] hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0";
                 targetInput.disabled = false;
                 intervalInput.disabled = false;
                 isRunning = false;
                 document.getElementById('stat-targets').innerText = "0";
             } else {
-                if (seq === 0) document.getElementById('log-list').innerHTML = ''; 
+                const emptyState = document.getElementById('empty-state');
+                if (emptyState) emptyState.remove();
                 
                 let interval = parseInt(intervalInput.value);
                 if (isNaN(interval) || interval < 500) {
-                    interval = 1500; // Slower default for HTTP fetch to avoid browser throttling
-                    intervalInput.value = 1500;
+                    interval = 5000;
+                    intervalInput.value = 5000;
                 }
 
                 btn.innerHTML = '<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><rect x="4" y="4" width="12" height="12"></rect></svg> STOP';
-                btn.className = "bg-transparent border border-red-500 text-red-500 hover:bg-red-500 hover:text-black font-bold px-6 py-1.5 transition-colors rounded-sm flex items-center gap-2 shrink-0";
+                btn.className = "flex-1 sm:flex-none bg-transparent border border-red-500 text-red-500 hover:bg-red-500 hover:text-black font-bold px-4 py-1.5 transition-colors rounded-sm flex items-center justify-center gap-2 shrink-0";
                 targetInput.disabled = true;
                 intervalInput.disabled = true;
                 isRunning = true;
@@ -149,33 +223,47 @@
             }
         }
 
-        // The core Client-Side HTTP Ping mechanism
+        function clearLogs() {
+            // Stop if running
+            if (isRunning) togglePing();
+
+            // Reset variables
+            seq = 0;
+            pingHistory = [];
+            logData = [["Sequence", "Timestamp", "Target", "Latency (ms)", "Status"]];
+            
+            // Reset Chart
+            chartInstance.data.labels = [];
+            chartInstance.data.datasets[0].data = [];
+            chartInstance.update();
+
+            // Reset UI
+            document.getElementById('stat-targets').innerText = "0";
+            document.getElementById('stat-avg').innerText = "-- ms";
+            document.getElementById('stat-jitter').innerText = "-- ms";
+            document.getElementById('stat-count').innerText = "0";
+            document.getElementById('log-list').innerHTML = '<div id="empty-state" class="text-center text-[#525252] py-6">Awaiting target execution...</div>';
+        }
+
         function clientSidePing(target) {
             return new Promise((resolve) => {
                 let url = target.trim();
-                // Assume HTTPS if protocol is missing
-                if (!url.startsWith('http')) {
-                    url = 'https://' + url;
-                }
+                if (!url.startsWith('http')) url = 'https://' + url;
 
                 const start = performance.now();
                 const img = new Image();
                 
-                // Timeout logic (e.g. 3 seconds)
                 const timer = setTimeout(() => {
-                    img.src = ''; // Cancel loading
+                    img.src = ''; 
                     resolve({ success: false });
                 }, 3000);
 
-                // If image loads OR if server responds with 404/CORS block, 
-                // the server is reachable and we have a round-trip time.
                 img.onload = img.onerror = () => {
                     clearTimeout(timer);
                     const latency = performance.now() - start;
                     resolve({ success: true, latency: latency });
                 };
 
-                // Append cache buster to force actual network request
                 img.src = `${url}/favicon.ico?_=${new Date().getTime()}`;
             });
         }
@@ -197,7 +285,7 @@
                 
                 if (data.success) {
                     addLog(currentSeq, timestamp, target, data.latency, "OK");
-                    updateStats(data.latency);
+                    updateStats(data.latency, currentSeq);
                 } else {
                     addLog(currentSeq, timestamp, target, 0, "TIMEOUT");
                 }
@@ -224,15 +312,16 @@
             if (list.scrollHeight - list.scrollTop - list.clientHeight < 50) {
                 list.scrollTop = list.scrollHeight; 
             }
-            logData.push([sq, ts, tgt, latDisplay, status]);
+            // Store for export
+            logData.push([sq, ts, tgt, status === "OK" ? lat.toFixed(1) : 0, status]);
         }
 
-        function updateStats(latency) {
+        function updateStats(latency, sequenceStr) {
             pingHistory.push(latency);
             const count = pingHistory.length;
             
+            // UI Stats
             document.getElementById('stat-count').innerText = count;
-
             const sum = pingHistory.reduce((a, b) => a + b, 0);
             const avg = sum / count;
             document.getElementById('stat-avg').innerText = `${avg.toFixed(1)} ms`;
@@ -247,17 +336,82 @@
             } else {
                 document.getElementById('stat-jitter').innerText = `0.0 ms`;
             }
+
+            // Update Chart
+            chartInstance.data.labels.push(sequenceStr);
+            chartInstance.data.datasets[0].data.push(latency);
+            
+            // Keep chart from getting endlessly crushed (keep last 100 points)
+            if (chartInstance.data.labels.length > 100) {
+                chartInstance.data.labels.shift();
+                chartInstance.data.datasets[0].data.shift();
+            }
+            chartInstance.update();
         }
 
-        function exportCSV() {
-            let csvContent = "data:text/csv;charset=utf-8," + logData.map(e => e.join(",")).join("\n");
-            let encodedUri = encodeURI(csvContent);
-            let link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `carino_client_ping_log_${Date.now()}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+        // Handle XLSX, ODS, and CSV via SheetJS
+        function exportData(format) {
+            if (logData.length <= 1) return alert("No data to export.");
+            
+            const ws = XLSX.utils.aoa_to_sheet(logData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Diagnostics");
+            
+            const filename = `carino_diagnostics_${Date.now()}.${format}`;
+            XLSX.writeFile(wb, filename);
+        }
+
+        // Handle PDF generation via jsPDF
+        function exportPDF() {
+            if (logData.length <= 1) return alert("No data to export.");
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Styling & Header
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(18);
+            doc.text("Carino Systems - Diagnostic Report", 14, 22);
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
+            
+            // Gather stats
+            const avg = document.getElementById('stat-avg').innerText;
+            const jitter = document.getElementById('stat-jitter').innerText;
+            const total = document.getElementById('stat-count').innerText;
+            const avgNum = parseFloat(avg);
+            
+            // Analytical logic
+            let conclusion = "Network routing and connection stability appear nominal.";
+            if (avgNum > 500) conclusion = "Warning: High average latency detected. Connection may be degraded.";
+            if (avgNum === 0 || isNaN(avgNum)) conclusion = "Critical: Connection failed or timed out entirely.";
+
+            // Report Body
+            doc.setTextColor(0);
+            doc.setFontSize(12);
+            doc.text("Executive Summary", 14, 45);
+            doc.setFontSize(10);
+            doc.text(`This document serves as an automated record of client-side HTTP latency testing.`, 14, 52);
+            doc.text(`The sequence executed ${total} total requests against configured targets.`, 14, 58);
+            
+            doc.setFont("helvetica", "bold");
+            doc.text(`Global Average Latency: ${avg}`, 14, 68);
+            doc.text(`Global Jitter (Variance): ${jitter}`, 14, 74);
+            doc.text(`Automated Assessment: ${conclusion}`, 14, 80);
+
+            // Table of Logs
+            doc.autoTable({
+                startY: 90,
+                head: [logData[0]],
+                body: logData.slice(1),
+                theme: 'grid',
+                headStyles: { fillColor: [255, 204, 0], textColor: [0, 0, 0] },
+                styles: { fontSize: 8, cellPadding: 2 }
+            });
+
+            doc.save(`carino_report_${Date.now()}.pdf`);
         }
     </script>
 </body>
