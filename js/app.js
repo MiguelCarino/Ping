@@ -41,6 +41,7 @@ const state = {
   seq: 0,
   interval: 2000,
   runHidden: false,
+  dropCold: true,        // the first request to a host is a warm-up, not a sample
   logScale: false,
   filter: '',
   startedAt: null,
@@ -57,6 +58,7 @@ function save() {
       path: $('pathInput').value,
       interval: state.interval,
       runHidden: state.runHidden,
+      dropCold: state.dropCold,
       logScale: state.logScale,
     }));
   } catch { /* private mode: the app still works, it just forgets */ }
@@ -70,6 +72,9 @@ function restore() {
   if (saved.path) $('pathInput').value = saved.path;
   if (saved.interval) { state.interval = saved.interval; $('intervalSel').value = String(saved.interval); }
   state.runHidden = !!saved.runHidden; $('optHidden').checked = state.runHidden;
+  // Absent in a store written before this option existed, and the default is
+  // on, so `!== false` rather than a truthiness test.
+  state.dropCold = saved.dropCold !== false; $('optDropCold').checked = state.dropCold;
   state.logScale = !!saved.logScale; $('btnLogScale').classList.toggle('active', state.logScale);
 }
 
@@ -130,6 +135,20 @@ async function runTarget(tg) {
     const sample = await probe(tg.url, { timeout: timeoutFor(state.interval), cold });
     tg.seen = true;
     if (!state.running) return;
+
+    /* The first request to a host is a warm-up: it pays DNS and both
+       handshakes, so it reads three to five times the steady state. It was
+       always kept out of the statistics, but it still sat in the log, on the
+       card and in the exports, where it reads as a measurement that happens to
+       be enormous. With this on it is sent — the connection has to be opened by
+       something — and then nothing is recorded: no row, no footnote, no export
+       line, and it is not counted in Sent. Turn it off to see what the handshake
+       actually cost. */
+    if (cold && state.dropCold) {
+      const spentWarm = performance.now() - began;
+      await sleep(Math.max(0, state.interval - spentWarm));
+      continue;
+    }
 
     tg.series.push(sample);
     state.seq++;
@@ -475,6 +494,7 @@ function init() {
     save();
   });
   $('optHidden').addEventListener('change', (e) => { state.runHidden = e.target.checked; save(); wakeAll(); });
+  $('optDropCold').addEventListener('change', (e) => { state.dropCold = e.target.checked; save(); });
   $('targetInput').addEventListener('change', save);
   $('pathInput').addEventListener('change', save);
   $('logFilter').addEventListener('input', applyFilter);

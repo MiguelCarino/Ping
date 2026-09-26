@@ -53,6 +53,10 @@
       <input type="text" id="pathInput" class="field path" value="/favicon.ico"
              title="Resource requested on each host. Small is what matters — a 404 answers just as well as a 200."
              aria-label="Probe path" />
+      <label class="opt" title="The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.">
+        <input type="checkbox" id="optDropCold" checked />
+        <span data-i18n>Drop the first request</span>
+      </label>
       <label class="opt" title="Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.">
         <input type="checkbox" id="optHidden" />
         <span data-i18n>Run in background tabs</span>
@@ -142,7 +146,7 @@
         <li data-i18n-html><strong>The target redirects.</strong> Check with <code>curl -sI https://host/path</code>. A 301 or 302 means you are timing two hops. Probe the URL it points at.</li>
         <li data-i18n-html><strong>You are reading a total, not TTFB.</strong> Where a server sends no <code>Timing-Allow-Origin</code> header the browser hides the phase breakdown, so the figure is the whole request — including the server's own think time and the transfer. Those rows are marked <em>total only</em>. Rows marked <strong>TTFB</strong> are time-to-first-byte, which is mostly propagation delay.</li>
         <li data-i18n-html><strong>ICMP and HTTPS may not talk to the same machine.</strong> An echo request is answered by the kernel of the first anycast node that sees the packet. An HTTPS request has to reach something that can actually serve the path, and on a CDN that can be a different machine in a different city.</li>
-        <li data-i18n-html><strong>The first request is not the steady state.</strong> It pays DNS plus the TCP and TLS handshakes — routinely three to five times the warm round trip. It is shown on each card, kept in the exports, and excluded from every statistic on this screen.</li>
+        <li data-i18n-html><strong>The first request is not the steady state.</strong> It pays DNS plus the TCP and TLS handshakes — routinely three to five times the warm round trip, which is why <em>Drop the first request</em> is on by default: it is sent to open the connection and then not recorded at all. Turn it off and it is kept, shown on each card and in the exports flagged <em>cold</em>, and still excluded from every statistic on this screen.</li>
       </ul>
 
       <h3 data-i18n>Cross-checks on the same screen</h3>
