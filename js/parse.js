@@ -223,6 +223,36 @@ function stripStamp(line, ctx) {
   return null;
 }
 
+/* A script that pings several hosts at once into one file has to say which
+   line is whose, and the usual way is a bracketed tag:
+
+     2026-09-24 10:01:16 [8.8.8.8] [1790265676.680296] 64 bytes from 8.8.8.8: …
+
+   — a wrapper's date, the tag, then ping -D's own epoch. Prefixes are peeled
+   in any order until none is left. When there are two clocks the epoch wins:
+   it is ping's own, to the microsecond, where the wrapper's is to the second.
+   A bracketed number is an epoch, never a tag; anything else bracketed at the
+   start of a line is a tag — a host, an address, a label. */
+const RX_TAG = /^\[([^\]\s]{1,253})\]\s*/;
+
+function stripPrefixes(line, ctx) {
+  let rest = line, abs = null, clock = null, tag = null, any = false;
+  for (let k = 0; k < 4; k++) {
+    const epoch = RX_EPOCH.test(rest);
+    const st = stripStamp(rest, ctx);
+    if (st) {
+      if (st.abs != null && (abs == null || epoch)) abs = st.abs;
+      else if (st.clock != null && abs == null) clock = st.clock;
+      rest = st.rest; any = true;
+      continue;
+    }
+    const m = tag == null ? RX_TAG.exec(rest) : null;
+    if (m && !/^\d+(?:\.\d+)?$/.test(m[1])) { tag = m[1]; rest = rest.slice(m[0].length); any = true; continue; }
+    break;
+  }
+  return any ? { abs, clock, tag, rest } : null;
+}
+
 /* ---- line patterns ---------------------------------------------------------- */
 
 const IP = String.raw`(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7}(?:%[\w.]+)?)`;
@@ -580,6 +610,41 @@ function newSession(id, tgt, label, line) {
   return { id, tgt, label, ip: '', startLine: line, endLine: line, n: 0, hadHeader: false, summary: null, check: null };
 }
 
+/**
+ * Re-join lines that a terminal or an editor wrapped. In a log whose lines
+ * open with a timestamp or tag, a line that has neither and means nothing on
+ * its own ("ttl=58 time=30.2 ms", "ms") is the tail of the line before it. The
+ * absorbed line is blanked rather than removed, so line numbers still point
+ * at the file. Logs without prefixes are left alone: there, a line without
+ * one is normal.
+ */
+function unwrap(lines) {
+  const ctx = { dateOrder: 'dmy', refYear: 2000, yearBump: 0, lastMonth: null, inWinStats: false, ps: 0 };
+  // Prefixed lines, against fragments: lines with no prefix that classify as
+  // nothing. Wrapping one line into three makes two fragments per prefix, so
+  // the bound is generous; a log with no prefixes at all is never touched.
+  let n = 0, pre = 0, frag = 0;
+  for (let i = 0; i < lines.length && n < 2000; i++) {
+    const l = lines[i];
+    if (!l.trim()) continue;
+    n++;
+    if (stripPrefixes(l, ctx)) pre++;
+    else if (!classify(l.trim(), null, ctx)) frag++;
+  }
+  if (pre < 3 || !frag || frag > pre * 4) return;
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.trim()) continue;
+    if (last >= 0 && !stripPrefixes(l, ctx) && !classify(l.trim(), null, ctx)) {
+      lines[last] = lines[last].replace(/\s+$/, '') + ' ' + l.trim();
+      lines[i] = '';
+      continue;
+    }
+    last = i;
+  }
+}
+
 /** Score the head of the file and pick a format (and, for Windows, a language). */
 export function detect(lines) {
   const firstReal = lines.find((l) => l.trim());
@@ -592,7 +657,7 @@ export function detect(lines) {
     const line = lines[i].replace(/\r$/, '');
     if (!line.trim()) continue;
     seen++;
-    const st = stripStamp(line, ctx);
+    const st = stripPrefixes(line, ctx);
     const body = (st ? st.rest : line).trim();
     const ev = classify(body, null, ctx);
     if (!ev) continue;
@@ -624,6 +689,7 @@ export function detect(lines) {
 export function parseLog(text, opts = {}) {
   const lines = text.split(/\r?\n/);
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  unwrap(lines);
   const det = detect(lines);
   const format = opts.format || det.format;
   if (!format) {
@@ -657,8 +723,13 @@ export function parseLog(text, opts = {}) {
   let stamped = { abs: 0, clock: 0 };
   let clockDay = 0, lastClock = null;
 
-  let cur = null;        // the session being filled
-  let seqState = null;   // per-session sequence bookkeeping
+  // One stream per tag. An untagged log is a single stream (''); a tagged one
+  // interleaves several pings line by line, and each keeps its own session
+  // and its own sequence numbers — 8.8.8.8's seq 4 says nothing about 1.1.1.1's.
+  const streams = new Map();
+  let key = '';
+  let cur = null;        // the session being filled, in the current stream
+  let seqState = null;   // its sequence bookkeeping
 
   const targetFor = (label, ip) => {
     const key = String(label).toLowerCase();
@@ -689,6 +760,7 @@ export function parseLog(text, opts = {}) {
     cur = newSession(out.sessions.length, tgt, label, line);
     cur.ip = ip || '';
     cur.hadHeader = header;
+    cur.stream = key;
     out.sessions.push(cur);
     seqState = FAMILY[format] === 'unix' || format === 'pwsh'
       ? { next: header && SEQ_BASE[format] != null ? SEQ_BASE[format] : null, wrap: 0, bySeq: new Map() }
@@ -749,8 +821,14 @@ export function parseLog(text, opts = {}) {
     const lineNo = i + 1;
     const raw = lines[i];
     if (!raw.trim()) continue;
-    const st = stripStamp(raw, ctx);
+    const st = stripPrefixes(raw, ctx);
     const body = (st ? st.rest : raw).trim();
+    const nextKey = st && st.tag ? st.tag : '';
+    if (nextKey !== key) {
+      streams.set(key, { cur, seqState });
+      key = nextKey;
+      ({ cur = null, seqState = null } = streams.get(key) || {});
+    }
     const stamp = {};
     if (st && st.abs != null) { stamp.at = st.abs; }
     else if (st && st.clock != null) {
@@ -797,9 +875,11 @@ export function parseLog(text, opts = {}) {
     // whoever answered; PowerShell 5 names the destination on every row.
     ctx.inWinStats = false;
     const status = ev.k === 'reply' ? (ev.dup ? 'dup' : 'ok') : ev.status;
-    const label = ev.target || ev.from || 'unknown';
+    // With no header to name the session, a tag is a better name than the
+    // responder: it is what the person who wrote the script called the target.
+    const label = ev.target || key || ev.from || 'unknown';
     if (!cur || (ev.target && cur.label.toLowerCase() !== String(ev.target).toLowerCase())) {
-      openSession(lastIp(label) && ev.target == null ? lastIp(label) : label, lastIp(ev.from || ''), lineNo, false);
+      openSession(lastIp(label) && ev.target == null && !key ? lastIp(label) : label, lastIp(ev.from || ''), lineNo, false);
     }
     if (st && st.abs != null) stamped.abs++; else if (st && st.clock != null) stamped.clock++;
 
@@ -818,7 +898,9 @@ export function parseLog(text, opts = {}) {
       pushSample({ line: lineNo, ...ev, seq: cur.n + 1, status, ...stamp });
     }
   }
-  closeSession();
+  streams.set(key, { cur, seqState });
+  for (const [k, sv] of streams) { key = k; cur = sv.cur; seqState = sv.seqState; closeSession(); }
+  out.sessions.sort((a, b) => a.id - b.id);
 
   const real = out.samples.filter((s) => !s.inferred).length || 1;
   out.basis = stamped.abs / real >= 0.5 ? 'absolute' : stamped.clock / real >= 0.5 ? 'clock' : 'estimated';
@@ -869,8 +951,10 @@ function finish(out, opts) {
     // No clock: lay the sessions end to end, one interval per probe. Sequence
     // numbers place samples exactly within a run, gaps included; Windows has
     // none, so a timed-out line is charged the full timeout it waited.
-    let cursor = 0;
+    // Interleaved streams ran at the same time, so each has its own cursor.
+    const cursors = new Map();
     for (const sess of out.sessions) {
+      let cursor = cursors.get(sess.stream || '') || 0;
       const list = bySess.get(sess.id) || [];
       if (out.format === 'csv') { for (const s of list) if (s.at == null) s.at = cursor; continue; }
       const seqd = list.length && list.every((s) => s.seq != null) && FAMILY[out.format] !== 'windows';
@@ -885,7 +969,7 @@ function finish(out, opts) {
         }
       }
       const last = list.reduce((a, s) => Math.max(a, s.at), cursor);
-      cursor = last + interval;
+      cursors.set(sess.stream || '', last + interval);
     }
   } else {
     // A clock exists, but inferred samples (and the odd unstamped line) have

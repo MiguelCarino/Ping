@@ -172,3 +172,37 @@ test('large log parses quickly', () => {
   assert.equal(r.samples.filter((s) => s.inferred).length, Math.floor(200000 / 97));
   assert.ok(dt < 4000, `took ${dt} ms`);
 });
+
+test('tagged parallel pings: date + [target] + -D epoch, one stream per tag', () => {
+  const r = fx('tagged-multi.txt');
+  assert.equal(r.format, 'linux');
+  assert.equal(r.basis, 'absolute');
+  assert.deepEqual(r.targets.map((t) => t.label), ['1.1.1.1', '8.8.8.8', 'files.evacenter.com']);
+  assert.equal(r.unparsedCount, 0, JSON.stringify(r.unparsed));
+  const by = (i) => r.samples.filter((s) => s.tgt === i).map((s) => s.status).join(',');
+  assert.equal(by(0), 'ok,ok,ok,ok');
+  assert.equal(by(1), 'ok,ok,ok,ok');
+  // seq 3 never arrived for this one — inferred, and only in its own stream
+  assert.equal(by(2), 'ok,ok,timeout,ok');
+  // the epoch (microseconds) wins over the wrapper's whole-second date
+  assert.equal(r.samples[0].at, 1790265676653.959);
+  const inf = r.samples.find((s) => s.inferred);
+  assert.ok(inf.at > 1790265677724 && inf.at < 1790265679704);
+  assert.equal(r.targets[2].ip, '3.161.188.59');
+});
+
+test('hard-wrapped lines are re-joined, line numbers kept', () => {
+  const a = fx('tagged-multi.txt'), b = fx('tagged-multi-wrapped.txt');
+  assert.equal(b.unparsedCount, 0, JSON.stringify(b.unparsed));
+  assert.deepEqual(b.samples.map((s) => [s.tgt, s.status, s.rtt]), a.samples.map((s) => [s.tgt, s.status, s.rtt]));
+  assert.ok(b.samples[b.samples.length - 1].line > a.samples[a.samples.length - 1].line);
+});
+
+test('tagged without a clock: parallel streams share the time axis', () => {
+  const text = ['[a] PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.', '[b] PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.',
+    '[a] 64 bytes from 10.0.0.1: icmp_seq=1 ttl=64 time=1.0 ms', '[b] 64 bytes from 10.0.0.2: icmp_seq=1 ttl=64 time=2.0 ms',
+    '[a] 64 bytes from 10.0.0.1: icmp_seq=2 ttl=64 time=1.0 ms', '[b] 64 bytes from 10.0.0.2: icmp_seq=2 ttl=64 time=2.0 ms'].join('\n');
+  const r = parseLog(text);
+  assert.equal(r.basis, 'estimated');
+  assert.deepEqual(r.samples.map((s) => s.at), [0, 0, 1000, 1000]);
+});
