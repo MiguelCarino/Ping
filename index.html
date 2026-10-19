@@ -21,8 +21,8 @@
         <button class="cs-btn seg-btn" id="modeLive" aria-pressed="true" title="Measure from this browser" data-i18n>Live</button>
         <button class="cs-btn seg-btn" id="modeLog" aria-pressed="false" title="Analyze a saved ping log" data-i18n>Log file</button>
       </span>
-      <span class="live-chip" id="modeChip" title="Measurement state" data-only="live">IDLE</span>
       <span class="verdict-badge" id="verdict" data-key="idle" title="No data yet." data-i18n>No data</span>
+      <span class="navsep" aria-hidden="true"></span>
       <select class="cs-btn cs-select" id="intervalSel" title="Time between probes" data-only="live">
         <option value="500">0.5s</option>
         <option value="1000">1s</option>
@@ -33,18 +33,30 @@
       </select>
       <button class="cs-btn primary" id="btnOpen" title="Open a ping log from this computer — it is read here and never uploaded" data-only="log" data-i18n>Open log</button>
       <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring" data-only="live">
-        <span class="btn-label">Start</span>
+        <i class="rundot" aria-hidden="true"></i><span class="btn-label">Start</span>
       </button>
-      <button class="cs-btn" id="btnClear" title="Clear all samples and statistics" data-i18n>Clear</button>
-      <span class="seg" role="group" aria-label="Export">
-        <button class="cs-btn seg-btn" id="btnCsv" title="Download every sample as CSV">CSV</button>
-        <button class="cs-btn seg-btn" id="btnXlsx" title="Download every sample as XLSX">XLSX</button>
-        <button class="cs-btn seg-btn" id="btnOds" title="Download every sample as ODS">ODS</button>
-        <button class="cs-btn seg-btn" id="btnReport" title="Open a printable report — summary, per-target distribution, peaks and lows" data-i18n>Report</button>
-      </span>
-      <button class="cs-btn" id="btnMethod" title="What this actually measures" data-i18n>Method</button>
+      <!-- Secondary actions are icons or a menu: the navbar holds one primary
+           action per mode, and everything else stays one click away. -->
+      <button class="cs-btn icon" id="btnClear" title="Clear all samples and statistics" aria-label="Clear">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M6.8 7v4M9.2 7v4"/></svg>
+      </button>
+      <button class="cs-btn" id="btnExport" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenu" title="Report and downloads">
+        <span data-i18n>Export</span>
+        <svg class="caret" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>
+      </button>
+      <button class="cs-btn icon" id="btnMethod" title="What this actually measures" aria-label="Method">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M6.3 6.3a1.8 1.8 0 1 1 2.5 1.6c-.5.2-.8.6-.8 1.1v.4M8 11.4v.1"/></svg>
+      </button>
     </div>
   </header>
+
+  <div class="menu" id="exportMenu" role="menu" aria-labelledby="btnExport" hidden>
+    <button role="menuitem" class="mi" id="btnReport"><b data-i18n>Report</b><small data-i18n>Printable summary — save as PDF</small></button>
+    <div class="msep" role="separator"></div>
+    <button role="menuitem" class="mi" id="btnCsv"><b>CSV</b><small data-i18n>Every sample, any spreadsheet</small></button>
+    <button role="menuitem" class="mi" id="btnXlsx"><b>XLSX</b><small>Excel</small></button>
+    <button role="menuitem" class="mi" id="btnOds"><b>ODS</b><small>LibreOffice</small></button>
+  </div>
 
   <!-- The whole app is one screen: this element owns the remaining height, and
        only the panes inside it ever scroll. -->
@@ -260,7 +272,23 @@
       </div>
     </div>
 
-    <div class="busy" id="aBusy" hidden><span class="spinner"></span><span id="aBusyMsg"></span></div>
+    <div class="busy" id="aBusy" hidden>
+      <div class="pcard" role="status" aria-live="polite">
+        <div class="pc-head"><b id="aBusyFile"></b><span class="muted num" id="aBusySize"></span></div>
+        <ol class="pc-steps" id="aSteps">
+          <li data-step="read" data-i18n>Read</li>
+          <li data-step="decode" data-i18n>Decode</li>
+          <li data-step="parse" data-i18n>Parse</li>
+          <li data-step="draw" data-i18n>Draw</li>
+        </ol>
+        <div class="pbar" id="aBar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="aBarFill"></i></div>
+        <div class="pc-foot">
+          <span id="aBusyMsg"></span>
+          <span class="num" id="aBusyCount"></span>
+        </div>
+        <button class="cs-btn tiny" id="aCancel" data-i18n>Cancel</button>
+      </div>
+    </div>
   </main>
 
   <div class="dropover" id="dropOver" hidden><div data-i18n>Drop the log to analyze it — it stays in this tab</div></div>

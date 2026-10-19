@@ -359,6 +359,20 @@ const I18N = {
     "An hour of ping -D against two hosts, with an outage, congestion and a route change": "Una hora de ping -D contra dos hosts, con una caída, congestión y un cambio de ruta",
     "…or paste ping output here": "…o pega aquí la salida de ping",
     "Read from a saved ping log, not measured by this browser: these are real ICMP round trips, taken by whatever machine ran the ping command. Lost probes are counted from what the log shows — Windows and macOS print a line for each timeout; Linux prints nothing, so a missing sequence number is counted as lost, and packets lost after the last reply are recovered from the summary's \"packets transmitted\". Duplicate replies are left out of every statistic. Where the log has no clock, the time axis is the sequence number times the interval chosen on screen, so durations are close but times of day are unknown. Where ping printed its own summary, the parsed counts and min/avg/max were checked against it. Windows counts \"Destination host unreachable\" as a received reply; this report counts it as lost. Statistics are min, p50, p95 and max, jitter is the RFC 3550 mean absolute difference between consecutive replies, and loss is pooled over probes.": "Leído de un log de ping guardado, no medido por este navegador: son viajes de ida y vuelta ICMP reales, tomados por la máquina que ejecutó el comando ping. Los sondeos perdidos se cuentan según lo que muestra el log: Windows y macOS imprimen una línea por cada tiempo agotado; Linux no imprime nada, así que un número de secuencia faltante se cuenta como perdido, y los paquetes perdidos después de la última respuesta se recuperan del \"packets transmitted\" del resumen. Las respuestas duplicadas quedan fuera de todas las estadísticas. Cuando el log no tiene reloj, el eje de tiempo es el número de secuencia por el intervalo elegido en pantalla, así que las duraciones son aproximadas pero la hora del día se desconoce. Donde ping imprimió su propio resumen, los conteos leídos y el mín/prom/máx se verificaron contra él. Windows cuenta \"Host de destino inaccesible\" como respuesta recibida; este informe la cuenta como perdida. Las estadísticas son mínimo, p50, p95 y máximo; la fluctuación es la diferencia absoluta media entre respuestas consecutivas de RFC 3550, y la pérdida se calcula sobre el total de sondeos.",
+    // Navbar menu and load progress
+    "Export": "Exportar",
+    "Report and downloads": "Informe y descargas",
+    "Printable summary — save as PDF": "Resumen imprimible — guárdalo como PDF",
+    "Every sample, any spreadsheet": "Cada muestra, cualquier hoja de cálculo",
+    "Read": "Leer",
+    "Decode": "Decodificar",
+    "Parse": "Analizar",
+    "Draw": "Dibujar",
+    "Cancel": "Cancelar",
+    "Decoding…": "Decodificando…",
+    "samples": "muestras",
+    "Handing over the samples…": "Entregando las muestras…",
+    "Building charts and table…": "Construyendo gráficas y tabla…",
   },
 
   'pt-BR': {
@@ -699,6 +713,20 @@ const I18N = {
     "An hour of ping -D against two hosts, with an outage, congestion and a route change": "Uma hora de ping -D contra dois hosts, com uma queda, congestionamento e uma mudança de rota",
     "…or paste ping output here": "…ou cole a saída do ping aqui",
     "Read from a saved ping log, not measured by this browser: these are real ICMP round trips, taken by whatever machine ran the ping command. Lost probes are counted from what the log shows — Windows and macOS print a line for each timeout; Linux prints nothing, so a missing sequence number is counted as lost, and packets lost after the last reply are recovered from the summary's \"packets transmitted\". Duplicate replies are left out of every statistic. Where the log has no clock, the time axis is the sequence number times the interval chosen on screen, so durations are close but times of day are unknown. Where ping printed its own summary, the parsed counts and min/avg/max were checked against it. Windows counts \"Destination host unreachable\" as a received reply; this report counts it as lost. Statistics are min, p50, p95 and max, jitter is the RFC 3550 mean absolute difference between consecutive replies, and loss is pooled over probes.": "Lido de um log de ping salvo, não medido por este navegador: são round trips ICMP reais, feitos pela máquina que executou o comando ping. As sondagens perdidas são contadas pelo que o log mostra — Windows e macOS imprimem uma linha para cada tempo esgotado; o Linux não imprime nada, então um número de sequência ausente é contado como perdido, e os pacotes perdidos após a última resposta são recuperados do \"packets transmitted\" do resumo. Respostas duplicadas ficam fora de todas as estatísticas. Quando o log não tem relógio, o eixo de tempo é o número de sequência vezes o intervalo escolhido na tela, então as durações são próximas, mas a hora do dia é desconhecida. Onde o ping imprimiu seu próprio resumo, as contagens lidas e o mín/méd/máx foram verificados contra ele. O Windows conta \"Host de destino inacessível\" como resposta recebida; este relatório a conta como perdida. As estatísticas são mínimo, p50, p95 e máximo; o jitter é a diferença absoluta média entre respostas consecutivas da RFC 3550, e a perda é calculada sobre o total de sondagens.",
+    // Navbar menu and load progress
+    "Export": "Exportar",
+    "Report and downloads": "Relatório e downloads",
+    "Printable summary — save as PDF": "Resumo para impressão — salve como PDF",
+    "Every sample, any spreadsheet": "Cada amostra, qualquer planilha",
+    "Read": "Ler",
+    "Decode": "Decodificar",
+    "Parse": "Analisar",
+    "Draw": "Desenhar",
+    "Cancel": "Cancelar",
+    "Decoding…": "Decodificando…",
+    "samples": "amostras",
+    "Handing over the samples…": "Entregando as amostras…",
+    "Building charts and table…": "Montando gráficos e tabela…",
   },
 
   ja: {
@@ -1039,6 +1067,20 @@ const I18N = {
     "An hour of ping -D against two hosts, with an outage, congestion and a route change": "2 台のホストへの 1 時間分の ping -D（停止・輻輳・経路変更を含む）",
     "…or paste ping output here": "…または ping の出力をここに貼り付け",
     "Read from a saved ping log, not measured by this browser: these are real ICMP round trips, taken by whatever machine ran the ping command. Lost probes are counted from what the log shows — Windows and macOS print a line for each timeout; Linux prints nothing, so a missing sequence number is counted as lost, and packets lost after the last reply are recovered from the summary's \"packets transmitted\". Duplicate replies are left out of every statistic. Where the log has no clock, the time axis is the sequence number times the interval chosen on screen, so durations are close but times of day are unknown. Where ping printed its own summary, the parsed counts and min/avg/max were checked against it. Windows counts \"Destination host unreachable\" as a received reply; this report counts it as lost. Statistics are min, p50, p95 and max, jitter is the RFC 3550 mean absolute difference between consecutive replies, and loss is pooled over probes.": "保存した ping ログから読み込んだもので、このブラウザーが測定したものではありません。ping コマンドを実行した PC が測った本物の ICMP ラウンドトリップです。損失はログに出ている内容から数えます — Windows と macOS はタイムアウトごとに 1 行出力しますが、Linux は何も出力しないため、現れないシーケンス番号を損失として数え、最後の応答の後に失われたパケットは要約の \"packets transmitted\" から復元します。重複応答はすべての統計から除外します。ログに時計がない場合、時間軸はシーケンス番号 × 画面で選んだ間隔なので、所要時間はほぼ正確ですが時刻は不明です。ping が要約を出力している箇所では、読み取った件数と min/avg/max を照合しました。Windows は「宛先ホストに到達できません」を受信した応答として数えますが、このレポートでは損失として数えます。統計は最小・p50・p95・最大で、ジッターは RFC 3550 の連続する応答間の平均絶対差、損失は全プローブに対する割合です。",
+    // Navbar menu and load progress
+    "Export": "エクスポート",
+    "Report and downloads": "レポートとダウンロード",
+    "Printable summary — save as PDF": "印刷用の要約 — PDF で保存",
+    "Every sample, any spreadsheet": "全サンプル、どの表計算ソフトでも",
+    "Read": "読み込み",
+    "Decode": "デコード",
+    "Parse": "解析",
+    "Draw": "描画",
+    "Cancel": "キャンセル",
+    "Decoding…": "デコード中…",
+    "samples": "サンプル",
+    "Handing over the samples…": "サンプルを受け渡し中…",
+    "Building charts and table…": "グラフと表を作成中…",
   },
 
   ru: {
@@ -1379,6 +1421,20 @@ const I18N = {
     "An hour of ping -D against two hosts, with an outage, congestion and a route change": "Час ping -D до двух узлов — с обрывом, перегрузкой и сменой маршрута",
     "…or paste ping output here": "…или вставьте вывод ping сюда",
     "Read from a saved ping log, not measured by this browser: these are real ICMP round trips, taken by whatever machine ran the ping command. Lost probes are counted from what the log shows — Windows and macOS print a line for each timeout; Linux prints nothing, so a missing sequence number is counted as lost, and packets lost after the last reply are recovered from the summary's \"packets transmitted\". Duplicate replies are left out of every statistic. Where the log has no clock, the time axis is the sequence number times the interval chosen on screen, so durations are close but times of day are unknown. Where ping printed its own summary, the parsed counts and min/avg/max were checked against it. Windows counts \"Destination host unreachable\" as a received reply; this report counts it as lost. Statistics are min, p50, p95 and max, jitter is the RFC 3550 mean absolute difference between consecutive replies, and loss is pooled over probes.": "Прочитано из сохранённого журнала ping, а не измерено этим браузером: это настоящие круговые задержки ICMP, снятые той машиной, где запускалась команда ping. Потерянные пробы считаются по тому, что видно в журнале: Windows и macOS пишут строку на каждый таймаут; Linux не пишет ничего, поэтому отсутствующий номер последовательности считается потерей, а пакеты, потерянные после последнего ответа, восстанавливаются по строке \"packets transmitted\" в сводке. Дублирующие ответы исключены из всей статистики. Если в журнале нет часов, ось времени — номер последовательности, умноженный на выбранный на экране интервал, поэтому длительности близки к правде, но время суток неизвестно. Где ping вывел собственную сводку, прочитанные счётчики и min/avg/max сверены с ней. Windows считает «Заданный узел недоступен» полученным ответом; в этом отчёте это потеря. Статистика — минимум, p50, p95 и максимум; джиттер — средняя абсолютная разница между соседними ответами по RFC 3550, а потери считаются по всем пробам.",
+    // Navbar menu and load progress
+    "Export": "Экспорт",
+    "Report and downloads": "Отчёт и выгрузки",
+    "Printable summary — save as PDF": "Сводка для печати — сохраните в PDF",
+    "Every sample, any spreadsheet": "Все замеры, любая таблица",
+    "Read": "Чтение",
+    "Decode": "Декодирование",
+    "Parse": "Разбор",
+    "Draw": "Отрисовка",
+    "Cancel": "Отмена",
+    "Decoding…": "Декодирование…",
+    "samples": "замеров",
+    "Handing over the samples…": "Передача замеров…",
+    "Building charts and table…": "Построение графиков и таблицы…",
   },
 };
 
@@ -1405,7 +1461,8 @@ function applyStaticI18n() {
 
 // Tooltips and placeholders, addressed explicitly by id.
 const ATTR_I18N = [
-  ['modeChip', 'title', 'Measurement state'],
+  ['btnExport', 'title', 'Report and downloads'],
+  ['btnMethod', 'title', 'What this actually measures'],
   ['intervalSel', 'title', 'Time between probes for each target'],
   ['timeoutSel', 'title', 'Give up on a probe after'],
   ['btnRun', 'title', 'Start or stop measuring'],

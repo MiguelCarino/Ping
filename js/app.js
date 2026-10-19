@@ -197,8 +197,9 @@ function setRunUI(on) {
   b.classList.toggle('running', on);
   b.setAttribute('aria-pressed', String(on));
   b.querySelector('.btn-label').textContent = on ? t('Stop') : t('Start');
-  $('modeChip').textContent = on ? t('MEASURING') : t('IDLE');
-  $('modeChip').classList.toggle('live', on);
+  // The button is the state: red Stop with a pulsing dot while measuring.
+  // (A separate IDLE/MEASURING chip said the same thing a second time.)
+  b.title = on ? t('MEASURING') + ' — ' + t('Start or stop measuring') : t('Start or stop measuring');
   ['targetInput', 'pathInput'].forEach((id) => { $(id).disabled = on; });
 }
 
@@ -518,6 +519,56 @@ function setMode(next, { push = true } = {}) {
   else { analyze.deactivate(); paint(); }
 }
 
+/* ---- the export menu --------------------------------------------------------
+
+   Four downloads used to sit in the navbar as a segmented row. They are one
+   button now, with a menu that is positioned against the viewport rather than
+   inside the navbar: on a phone the navbar's action strip scrolls, and a
+   scrolling box clips anything positioned inside it. */
+function bindMenu() {
+  const btn = $('btnExport');
+  const menu = $('exportMenu');
+  const items = () => [...menu.querySelectorAll('[role="menuitem"]')];
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    // Right-aligned to the button, but never off either edge of the screen.
+    const w = menu.offsetWidth;
+    menu.style.top = `${Math.round(r.bottom + 6)}px`;
+    menu.style.left = `${Math.round(Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)))}px`;
+  };
+  const open = (focusFirst) => {
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    place();
+    if (focusFirst) items()[0].focus();
+  };
+  const close = (refocus) => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    if (refocus) btn.focus();
+  };
+  btn.addEventListener('click', () => (menu.hidden ? open(false) : close(false)));
+  btn.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); open(true); } });
+  menu.addEventListener('keydown', (e) => {
+    const list = items(), i = list.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); close(true); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+    else if (e.key === 'Tab') close(false);
+  });
+  menu.addEventListener('click', (e) => { if (e.target.closest('[role="menuitem"]')) close(false); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) close(false);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) close(true); });
+  window.addEventListener('resize', () => close(false));
+  // Follow the button rather than closing: on a phone, tapping Export scrolls
+  // the navbar's action strip to reveal it, and that scroll would otherwise
+  // shut the menu the same instant it opened.
+  window.addEventListener('scroll', () => { if (!menu.hidden) place(); }, true);
+}
+
 /* Drop a file anywhere: it can only mean "read this", so it switches mode. */
 function bindDrop() {
   const over = $('dropOver');
@@ -550,6 +601,7 @@ function init() {
   window.addEventListener('hashchange', () => setMode(location.hash === '#log' ? 'log' : 'live', { push: false }));
   analyze.init({ notice });
   bindDrop();
+  bindMenu();
   $('intervalSel').addEventListener('change', (e) => {
     state.interval = +e.target.value;
     $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
@@ -593,7 +645,12 @@ function init() {
   // Phone URL-bar show/hide changes the height without firing a resize in some
   // browsers; the visual viewport does report it.
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-  window.addEventListener('carino:langchange', () => { setRunUI(state.running); renderConnection(); if (mode === 'live') paint(); });
+  window.addEventListener('carino:langchange', () => {
+    setRunUI(state.running); renderConnection();
+    // i18n.js resets the static titles first; this one depends on the mode.
+    $('btnClear').title = mode === 'log' ? t('Close this log') : t('Clear all samples and statistics');
+    if (mode === 'live') paint();
+  });
 
   $('stunHost').textContent = STUN_SERVER;
   $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;

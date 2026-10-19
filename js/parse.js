@@ -538,7 +538,7 @@ const CSV_STATUS = {
 };
 
 /** Reads the CSV the live view and this view both export. */
-function parseCsv(lines) {
+function parseCsv(lines, onProgress) {
   const first = lines[0].replace(/^﻿/, '');
   const d = first.includes(';') && !first.includes(',') ? ';' : ',';
   const head = splitCsv(first, d).map((h) => h.trim());
@@ -553,6 +553,7 @@ function parseCsv(lines) {
   const sIndex = new Map();
   let basis = null;
   for (let i = 1; i < lines.length; i++) {
+    if (onProgress && !(i & 0x3fff)) onProgress({ phase: 'parse', done: i, total: lines.length, rows: out.samples.length });
     const raw = lines[i];
     if (!raw.trim()) continue;
     const f = splitCsv(raw, d);
@@ -684,7 +685,9 @@ export function detect(lines) {
  * Parse a whole log.
  * @param text   decoded text
  * @param opts   { format?: forced format, interval?: ms per probe when the
- *                 log has no clock, dateOrder?: 'dmy'|'mdy'|'ymd', refYear? }
+ *                 log has no clock, dateOrder?: 'dmy'|'mdy'|'ymd', refYear?,
+ *                 onProgress?: ({ phase, done, total, rows }) => void — called
+ *                 every 16 384 lines }
  */
 export function parseLog(text, opts = {}) {
   const lines = text.split(/\r?\n/);
@@ -698,7 +701,7 @@ export function parseLog(text, opts = {}) {
     return r;
   }
   if (format === 'csv') {
-    const r = parseCsv(lines);
+    const r = parseCsv(lines, opts.onProgress);
     r.lineCount = lines.length;
     finish(r, opts);
     return r;
@@ -817,7 +820,9 @@ export function parseLog(text, opts = {}) {
     });
   }
 
+  const onProgress = opts.onProgress;
   for (let i = 0; i < lines.length; i++) {
+    if (onProgress && !(i & 0x3fff)) onProgress({ phase: 'parse', done: i, total: lines.length, rows: out.samples.length });
     const lineNo = i + 1;
     const raw = lines[i];
     if (!raw.trim()) continue;

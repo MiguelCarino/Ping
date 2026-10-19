@@ -82,6 +82,8 @@ let worker = null;
 let reqId = 0;
 const pending = new Map();
 
+class Cancelled extends Error {}
+
 function getWorker() {
   if (worker === false) return null;
   if (worker) return worker;
@@ -94,6 +96,7 @@ function getWorker() {
   worker.onmessage = (e) => {
     const p = pending.get(e.data.id);
     if (!p) return;
+    if (e.data.progress) { if (p.onProgress) p.onProgress(e.data.progress); return; }
     pending.delete(e.data.id);
     if (e.data.ok) p.resolve(e.data); else p.reject(new Error(e.data.error));
   };
@@ -105,28 +108,37 @@ function getWorker() {
     worker = false;
     const waiting = [...pending.values()];
     pending.clear();
-    waiting.forEach((p) => mainThread(p.payload).then(p.resolve, p.reject));
+    waiting.forEach((p) => mainThread(p.payload, p.onProgress).then(p.resolve, p.reject));
   };
   return worker;
 }
 
-async function mainThread(payload) {
+async function mainThread(payload, onProgress) {
   const { decode, parseLog } = await import('./parse.js');
   let text = payload.text, encoding = null;
   if (text == null) ({ text, encoding } = decode(payload.buf));
-  const res = parseLog(text, payload.opts);
+  const res = parseLog(text, { ...payload.opts, onProgress });
   res.encoding = encoding || payload.opts.encoding || null;
   return { res, text: payload.text == null ? text : null };
 }
 
-function runParse(payload) {
+function runParse(payload, onProgress) {
   const w = getWorker();
-  if (!w) return mainThread(payload);
+  if (!w) return mainThread(payload, onProgress);
   return new Promise((resolve, reject) => {
     const id = ++reqId;
-    pending.set(id, { resolve, reject, payload });
+    pending.set(id, { resolve, reject, payload, onProgress });
     w.postMessage({ id, ...payload });     // copied, not transferred: the fallback may need it
   });
+}
+
+/** Stop a parse in flight. A worker cannot be interrupted mid-loop, so it is
+    thrown away; the next parse starts a fresh one. */
+function cancelParse() {
+  if (worker) { worker.terminate(); worker = null; }
+  const waiting = [...pending.values()];
+  pending.clear();
+  waiting.forEach((p) => p.reject(new Cancelled()));
 }
 
 function parseOpts(file = A.file, fresh = false) {
@@ -140,63 +152,141 @@ function parseOpts(file = A.file, fresh = false) {
   };
 }
 
-function setBusy(on, msg) {
-  A.busy = on;
-  $('aBusy').hidden = !on;
-  if (msg) $('aBusyMsg').textContent = msg;
-}
-
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} kB` : `${n} B`);
 
+/* ---- progress ----------------------------------------------------------------
+
+   Four steps, each with its share of the bar: reading the file, decoding it,
+   parsing it (by far the longest, and the one with a real line count), and
+   drawing the result on the main thread. The card appears only if the work
+   outlasts a blink — a 2 kB log should not flash a dialog. */
+
+const STEPS = ['read', 'decode', 'parse', 'draw'];
+const WEIGHT = { read: 0.2, decode: 0.08, parse: 0.62, draw: 0.1 };
+let busyTimer = null;
+let job = null;          // { cancelled } for the load in flight
+
+function busyStart(name, size) {
+  A.busy = true;
+  $('aBusyFile').textContent = name;
+  $('aBusySize').textContent = size != null ? fmtSize(size) : '';
+  $('aBusyCount').textContent = '';
+  step('read', 0, '');
+  clearTimeout(busyTimer);
+  busyTimer = setTimeout(() => { if (A.busy) $('aBusy').hidden = false; }, 150);
+}
+
+function busyEnd() {
+  A.busy = false;
+  clearTimeout(busyTimer);
+  $('aBusy').hidden = true;
+}
+
+/** Move to `name` with `frac` of it done (null: no measure, the bar pulses). */
+function step(name, frac, msg, count) {
+  const at = STEPS.indexOf(name);
+  document.querySelectorAll('#aSteps [data-step]').forEach((li, i) => {
+    li.dataset.state = i < at ? 'done' : i === at ? 'active' : '';
+  });
+  let total = 0;
+  for (let i = 0; i < at; i++) total += WEIGHT[STEPS[i]];
+  total += WEIGHT[name] * (frac == null ? 0.5 : Math.max(0, Math.min(1, frac)));
+  const bar = $('aBar');
+  bar.classList.toggle('indet', frac == null);
+  bar.setAttribute('aria-valuenow', String(Math.round(total * 100)));
+  $('aBarFill').style.width = `${(total * 100).toFixed(1)}%`;
+  if (msg != null) $('aBusyMsg').textContent = msg;
+  if (count != null) $('aBusyCount').textContent = count;
+}
+
+function onParseProgress(p) {
+  if (p.phase === 'decode') step('decode', null, t('Decoding…'));
+  else if (p.phase === 'parse') {
+    step('parse', p.total ? p.done / p.total : null, t('Parsing…'),
+      `${p.done.toLocaleString()} / ${p.total.toLocaleString()} ${t('lines')} · ${p.rows.toLocaleString()} ${t('samples')}`);
+  } else if (p.phase === 'send') {
+    step('parse', 1, t('Handing over the samples…'), `${p.rows.toLocaleString()} ${t('samples')}`);
+  }
+}
+
+/** Let the card paint before the main thread goes busy drawing. */
+const nextPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+/** Read a file in chunks so the first step has a real byte count. */
+async function readFile(file, mine) {
+  if (!file.stream) return file.arrayBuffer();
+  const reader = file.stream().getReader();
+  const out = new Uint8Array(file.size);
+  let off = 0;
+  for (;;) {
+    if (mine.cancelled) { reader.cancel(); throw new Cancelled(); }
+    const { done, value } = await reader.read();
+    if (done) break;
+    // The file grew while being read: start over the simple way.
+    if (off + value.length > out.length) { reader.cancel(); return file.arrayBuffer(); }
+    out.set(value, off);
+    off += value.length;
+    step('read', file.size ? off / file.size : null, `${t('Reading')} ${fmtSize(off)} / ${fmtSize(file.size)}`);
+  }
+  return off === out.length ? out.buffer : out.slice(0, off).buffer;
+}
 /* A new file replaces the current log only once it has parsed into something:
    a wrong file dropped on a good analysis leaves the analysis where it was. */
-function adopt(out, file, text) {
+async function adopt(out, file, text) {
   if (!usable(out.res)) { refuse(out.res); return; }
+  step('draw', null, t('Building charts and table…'), `${out.res.samples.length.toLocaleString()} ${t('samples')}`);
+  await nextPaint();
   A.file = file;
   A.text = text; A.lines = null;
   A.opts.format = ''; A.opts.dateOrder = '';
   accept(out.res);
 }
 
-export async function loadFile(file) {
-  if (!file) return;
-  setBusy(true, `${t('Reading')} ${file.name} · ${fmtSize(file.size)}…`);
+/** One load at a time: a second drop cancels the first. */
+async function run(name, size, work) {
+  if (job) { job.cancelled = true; cancelParse(); }
+  const mine = { cancelled: false };
+  job = mine;
+  busyStart(name, size);
   try {
-    const buf = await file.arrayBuffer();
+    await work(mine);
+  } catch (err) {
+    if (!(err instanceof Cancelled) && job === mine) notify(t('Could not read the file:') + ' ' + err.message, 'err');
+  } finally {
+    if (job === mine) { job = null; busyEnd(); }
+  }
+}
+
+export function loadFile(file) {
+  if (!file) return Promise.resolve();
+  return run(file.name, file.size, async (mine) => {
+    const buf = await readFile(file, mine);
     const meta = { name: file.name, size: file.size, lastModified: file.lastModified };
-    const out = await runParse({ buf, opts: parseOpts(meta, true) });
-    adopt(out, meta, out.text);
-  } catch (err) {
-    notify(t('Could not read the file:') + ' ' + err.message, 'err');
-  } finally {
-    setBusy(false);
-  }
+    step('decode', null, t('Decoding…'));
+    const out = await runParse({ buf, opts: parseOpts(meta, true) }, onParseProgress);
+    if (!mine.cancelled) await adopt(out, meta, out.text);
+  });
 }
 
-async function loadText(text, name) {
-  setBusy(true, t('Parsing…'));
-  try {
-    const meta = { name, size: new Blob([text]).size, lastModified: Date.now() };
-    const out = await runParse({ text, opts: parseOpts(meta, true) });
-    adopt(out, meta, text);
-  } catch (err) {
-    notify(err.message, 'err');
-  } finally {
-    setBusy(false);
-  }
+function loadText(text, name) {
+  const meta = { name, size: new Blob([text]).size, lastModified: Date.now() };
+  return run(name, meta.size, async (mine) => {
+    step('parse', 0, t('Parsing…'));
+    const out = await runParse({ text, opts: parseOpts(meta, true) }, onParseProgress);
+    if (!mine.cancelled) await adopt(out, meta, text);
+  });
 }
 
-async function reparse() {
-  if (A.text == null) return;
-  setBusy(true, t('Parsing…'));
-  try {
-    const out = await runParse({ text: A.text, opts: parseOpts() });
+function reparse() {
+  if (A.text == null) return Promise.resolve();
+  return run(A.file ? A.file.name : '', A.file ? A.file.size : null, async (mine) => {
+    step('parse', 0, t('Parsing…'));
+    const out = await runParse({ text: A.text, opts: parseOpts() }, onParseProgress);
+    if (mine.cancelled) return;
+    step('draw', null, t('Building charts and table…'));
+    await nextPaint();
     accept(out.res, true);
-  } catch (err) {
-    notify(err.message, 'err');
-  } finally {
-    setBusy(false);
-  }
+  });
 }
 
 const usable = (res) => !!(res.format && res.samples.length);
@@ -1060,6 +1150,7 @@ export function init({ notice }) {
     loadText(text, t('pasted text'));
   });
   $('aExample').addEventListener('click', () => loadText(exampleLog(), 'example-ping-D.log'));
+  $('aCancel').addEventListener('click', () => { if (job) { job.cancelled = true; cancelParse(); } });
 
   $('aFormat').addEventListener('change', (e) => { A.opts.format = e.target.value; reparse(); });
   $('aInterval').addEventListener('change', (e) => { A.opts.interval = +e.target.value; save(); reparse(); });

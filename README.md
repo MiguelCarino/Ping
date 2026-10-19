@@ -107,6 +107,10 @@ Peaks are ranked by how far a sample sat **above its own target's median**, not 
 
 ## Shape
 
+The navbar holds one primary action per mode — **Start** (which turns into a red Stop with a pulsing dot, so no separate state chip) or **Open log** — plus Clear and Method as icons and a single **Export** menu for the report and the three spreadsheet formats. The menu is positioned against the viewport, because on a phone the navbar's action strip scrolls and would clip it.
+
+Loading a log shows a progress card — read, decode, parse, draw — with the bytes read, then lines parsed and samples found as the worker reports them, and a Cancel that throws the worker away and keeps whatever log was on screen.
+
 The verdict is a **badge in the navbar**, not a bar across the page: it names the conclusion in a word (*Healthy*, *Usable*, *Slow*, *Packet loss*, *No reply*) and carries the full sentence in its tooltip, which is also what the report prints. That removed a whole row from the layout.
 
 One screen, no page scroll. The body is exactly the viewport tall with `overflow:hidden`; the shared navbar takes its 60px and the app takes the rest. The target cards and the sample log scroll inside their own panes, and the method notes live in a dialog rather than below a fold. The cards carry no panel or heading of their own — each names its target, so a frame around a list of framed things was a second line saying nothing. Verified at ten viewport sizes from 1920×1080 down to 360×640 and 740×360 (landscape phone), idle and mid-run, in both axes.
