@@ -43,6 +43,11 @@ export function toRows(log) {
   ]);
 }
 
+/** What a download is made of. The live view's record has the phase split;
+    an imported log has responder, TTL and a time basis instead, so the log
+    view passes its own. */
+export const LIVE = { columns: COLUMNS, rows: toRows, sheet: 'Latency', prefix: 'carino-ping' };
+
 function stamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 }
@@ -56,21 +61,21 @@ function download(blob, name) {
 }
 
 /** CSV needs no library at all — RFC 4180 quoting is four lines. */
-export function exportCSV(log) {
-  const rows = [COLUMNS, ...toRows(log)];
+export function exportCSV(log, schema = LIVE) {
+  const rows = [schema.columns, ...schema.rows(log)];
   const esc = (v) => {
     const s = v == null ? '' : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const csv = rows.map((r) => r.map(esc).join(',')).join('\r\n');
-  download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `carino-ping-${stamp()}.csv`);
+  download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `${schema.prefix}-${stamp()}.csv`);
 }
 
-export async function exportSheet(log, format /* 'xlsx' | 'ods' */) {
+export async function exportSheet(log, format /* 'xlsx' | 'ods' */, schema = LIVE) {
   await loadScript('vendor/xlsx.full.min.js');
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNS, ...toRows(log)]);
-  ws['!cols'] = COLUMNS.map((c) => ({ wch: Math.max(10, c.length + 2) }));
+  const ws = XLSX.utils.aoa_to_sheet([schema.columns, ...schema.rows(log)]);
+  ws['!cols'] = schema.columns.map((c) => ({ wch: Math.max(10, c.length + 2) }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Latency');
-  XLSX.writeFile(wb, `carino-ping-${stamp()}.${format}`, { bookType: format });
+  XLSX.utils.book_append_sheet(wb, ws, schema.sheet);
+  XLSX.writeFile(wb, `${schema.prefix}-${stamp()}.${format}`, { bookType: format });
 }

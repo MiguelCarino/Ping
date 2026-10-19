@@ -1,0 +1,13 @@
+PING google.com (142.250.72.14): 56 data bytes
+64 bytes from 142.250.72.14: icmp_seq=0 ttl=117 time=12.345 ms
+Request timeout for icmp_seq 1
+64 bytes from 142.250.72.14: icmp_seq=2 ttl=117 time=14.020 ms
+92 bytes from 192.168.1.1: Destination Host Unreachable
+Vr HL TOS  Len   ID Flg  off TTL Pro  cks      Src      Dst
+ 4  5  00 5400 1c3a   0 0000  40  01 2b6c 192.168.1.10  142.250.72.14
+
+64 bytes from 142.250.72.14: icmp_seq=4 ttl=117 time=13.100 ms
+
+--- google.com ping statistics ---
+5 packets transmitted, 3 packets received, 40.0% packet loss
+round-trip min/avg/max/stddev = 12.345/13.155/14.020/0.684 ms

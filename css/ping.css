@@ -206,7 +206,9 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .empty[hidden]{display:none;}
 
 /* ---- method dialog ---- */
-.dlg{border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);
+/* margin:auto is what centres a modal <dialog>; the reset at the top of this
+   file zeroes it, which pinned every dialog to the top-left corner. */
+.dlg{margin:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);
   width:min(760px,calc(100vw - 32px));max-height:min(80dvh,760px);padding:0;
   display:flex;flex-direction:column;overflow:hidden;}
 .dlg::backdrop{background:rgba(0,0,0,.72);}
@@ -232,6 +234,113 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .dlg-body table.cmp td.ok{color:var(--ok);}
 .dlg-body table.cmp td.warn{color:var(--accent-hi);}
 .dlg-body table.cmp td.bad{color:var(--err);font-weight:700;}
+
+/* ---- modes ----
+   One page, two screens. The navbar controls that only make sense for one of
+   them carry data-only and are hidden in the other. [hidden] is made absolute
+   here because several of the elements it is used on set their own display. */
+[hidden]{display:none !important;}
+body[data-mode="log"] [data-only="live"],
+body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
+.modeseg .seg-btn[aria-pressed="true"]{color:var(--accent);background:var(--accent-faint);}
+
+/* ---- log file mode ---- */
+.analyze{position:relative;}
+/* In a log the chart is the finding and the table is the evidence, so the
+   chart gets the larger share — the reverse of the live screen. */
+.analyze .chartpane{flex:3 1 0;}
+.analyze .logpane{flex:2 1 0;}
+.loaded{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--gap);}
+
+.dropzone{flex:1;min-height:0;overflow-y:auto;border:1px dashed var(--border-hi);border-radius:10px;
+  background:var(--bg-card);display:flex;}
+.dz-inner{margin:auto;width:min(680px,100%);padding:24px 18px;display:flex;flex-direction:column;gap:12px;}
+.dz-inner h2{font-family:var(--display);font-size:1.2rem;font-weight:700;}
+.dz-lead{font-size:.82rem;line-height:1.6;color:var(--text-sec);}
+.dz-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.field.paste{height:auto;min-height:110px;padding:9px 10px;resize:vertical;line-height:1.45;font-size:.7rem;}
+.dz-formats{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 14px;
+  font-size:.72rem;color:var(--text-muted);margin-top:4px;}
+.dz-formats b{color:var(--text-sec);font-weight:600;margin-right:4px;}
+
+.srcstrip{gap:8px;}
+.srcstrip .filetag{flex:1 1 auto;min-width:120px;}
+.srcstrip .filetag b{max-width:36ch;}
+.srcstrip .filetag small{font-size:.62rem;white-space:nowrap;}
+.chip.basis{cursor:help;font-size:.58rem;padding:4px 7px;}
+.chip.basis[data-basis="absolute"]{color:var(--ok);border-color:rgba(34,197,94,.4);}
+.chip.basis[data-basis="estimated"]{color:var(--accent-hi);border-color:var(--accent-dim);}
+.chip-btn{background:transparent;cursor:pointer;font-size:.58rem;padding:4px 7px;}
+.chip-btn:hover{border-color:var(--accent);}
+.chip.good{color:var(--ok);border-color:rgba(34,197,94,.4);}
+.chip.bad,.chip.warn{color:#fca5a5;border-color:rgba(239,68,68,.45);}
+
+.tabs{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{background:transparent;border:1px solid transparent;border-radius:5px;color:var(--text-muted);
+  font-family:var(--mono);font-size:.66rem;padding:4px 9px;cursor:pointer;white-space:nowrap;}
+.tab:hover:not(:disabled){color:var(--text);}
+.tab.active{color:var(--accent);border-color:var(--accent-dim);background:var(--accent-faint);}
+.tab:disabled{opacity:.35;cursor:not-allowed;}
+.rangechip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.62rem;color:var(--accent);
+  border:1px solid var(--accent-dim);border-radius:4px;padding:2px 3px 2px 7px;white-space:nowrap;margin-left:auto;}
+.rangechip button{background:transparent;border:0;color:inherit;cursor:pointer;font-size:.7rem;padding:0 4px;}
+.chartpane .pane-head{gap:8px;}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;padding:6px 12px 0;font-family:var(--mono);font-size:.62rem;color:var(--text-sec);}
+.legend:empty{display:none;}
+.lg-item{display:inline-flex;align-items:center;gap:6px;}
+.lg-item i{display:inline-block;width:14px;height:2px;border-radius:1px;}
+.analyze .canvas-wrap{cursor:crosshair;touch-action:pan-y;}
+#aChart{width:100%;height:100%;display:block;}
+.crosshair{position:absolute;top:18px;bottom:24px;width:1px;background:var(--text-muted);opacity:.6;pointer-events:none;}
+.tip{position:absolute;z-index:3;pointer-events:none;min-width:150px;max-width:280px;background:#000;
+  border:1px solid var(--border-hi);border-radius:6px;padding:7px 9px;font-family:var(--mono);font-size:.64rem;
+  box-shadow:0 6px 20px rgba(0,0,0,.6);}
+.tip-head{color:var(--text-muted);margin-bottom:4px;white-space:nowrap;}
+.tip-row{display:flex;align-items:center;gap:7px;line-height:1.55;}
+.tip-row i{flex:0 0 12px;height:2px;border-radius:1px;}
+.tip-row b{color:var(--text);font-weight:700;white-space:nowrap;}
+.tip-row span{color:var(--text-sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chartnote{flex-shrink:0;padding:0 12px 7px;font-size:.6rem;color:var(--text-muted);line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+.pane-head.filters{justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;}
+.pane-head.filters h2{margin-right:auto;display:flex;align-items:baseline;gap:6px;}
+.pane-head.filters h2 small{font-family:var(--mono);font-size:.6rem;font-weight:400;}
+.pane-head.filters .cs-btn{height:26px;font-size:.64rem;flex-shrink:0;}
+.field.xs{height:26px;width:58px;padding:0 6px;font-size:.66rem;}
+
+/* The virtual table: a spacer as tall as every row would be, and only the rows
+   in view rendered inside it, absolutely placed. */
+.vpane{position:relative;}
+.vspacer{position:relative;}
+.lhead.ahead,.lrow.arow{grid-template-columns:58px 118px minmax(100px,1.2fr) minmax(100px,1.2fr) 56px 40px 78px 150px;}
+.arow{position:absolute;left:0;right:0;height:26px;padding-top:0;padding-bottom:0;}
+.arow .c-line,.arow .c-seq,.arow .c-ttl{color:var(--text-muted);}
+.arow .c-from{color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.64rem;}
+.arow.dup{opacity:.55;}
+.arow .c-st.dupst{color:#38bdf8;}
+.arow .inf{font-style:normal;color:var(--text-muted);border:1px solid var(--border-hi);border-radius:3px;
+  padding:0 3px;font-size:.54rem;margin-left:3px;}
+
+.tcard .facts{list-style:none;display:flex;flex-direction:column;gap:3px;font-size:.62rem;color:var(--text-muted);line-height:1.4;}
+.tcard .facts li{cursor:help;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tcard .facts b{color:var(--text-sec);font-family:var(--mono);font-weight:600;}
+.tcard .facts li.good{color:var(--ok);}
+.tcard .facts li.bad,.tcard .facts li.warn{color:var(--accent-hi);}
+
+.busy{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;gap:10px;
+  background:rgba(5,5,5,.72);font-family:var(--mono);font-size:.74rem;color:var(--text-sec);}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--border-hi);border-top-color:var(--accent);
+  animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none;}}
+.dropover{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,5,5,.82);pointer-events:none;}
+.dropover div{border:2px dashed var(--accent);border-radius:12px;padding:34px 40px;color:var(--accent);
+  font-family:var(--display);font-size:1.05rem;font-weight:700;text-align:center;max-width:min(520px,90vw);}
+.rawlines{font-family:var(--mono);font-size:.66rem;line-height:1.5;color:var(--text-sec);background:#000;
+  border:1px solid var(--border);border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;white-space:pre;margin:6px 0 10px;}
 
 /* ---- narrow ----
 
@@ -275,7 +384,27 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   .lhead .c-ph,.lrow .c-ph{display:none;}
   .lhead,.lrow{grid-template-columns:40px 66px minmax(84px,1fr) 74px 100px;}
   }
+@media (max-width:860px){
+  .ahead .c-from,.arow .c-from,.ahead .c-line,.arow .c-line,.ahead .c-ttl,.arow .c-ttl{display:none;}
+  .lhead.ahead,.lrow.arow{grid-template-columns:96px minmax(80px,1fr) 46px 70px 112px;}
+}
+@media (max-width:860px) and (min-height:620px){
+  .srcstrip .filetag{flex-basis:100%;}
+}
+/* Short screens: the log's source strip becomes one scrolling row, like the
+   navbar's controls, and the chart's caption goes first. */
+@media (max-height:700px){
+  .chartnote,.legend{display:none;}
+  .analyze .tcard .facts{display:none;}
+  .srcstrip{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;}
+  .srcstrip::-webkit-scrollbar{display:none;}
+  .srcstrip>*{flex-shrink:0;}
+  .srcstrip .filetag{flex:0 0 auto;}
+}
 @media (max-width:520px){
+  .ahead .c-seq,.arow .c-seq{display:none;}
+  .lhead.ahead,.lrow.arow{grid-template-columns:82px minmax(70px,1fr) 66px 96px;}
+  .chartnote{display:none;}
   .lhead,.lrow{grid-template-columns:60px minmax(74px,1fr) 70px 88px;}
   .lhead .c-seq,.lrow .c-seq{display:none;}
   .slabel{display:none;}

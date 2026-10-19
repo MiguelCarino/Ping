@@ -18,6 +18,7 @@ import { exportCSV, exportSheet } from './export.js';
 import { measureDownlink, fmtMbps } from './speed.js';
 import { environment, connectionLabel, reverseDNS } from './client.js';
 import { reportHtml, openReport } from './report.js';
+import * as analyze from './analyze.js';
 
 const $ = (id) => document.getElementById(id);
 const t = (k) => (window.t ? window.t(k) : k);
@@ -92,7 +93,8 @@ function sleep(msec) {
 function wakeAll() { state.waiters.forEach((c) => c()); state.waiters.clear(); }
 
 function notice(text, kind = 'warn') {
-  const el = $('notice');
+  // Each mode has its own line, under its own strip.
+  const el = $(mode === 'log' ? 'aNotice' : 'notice');
   if (!text) { el.hidden = true; el.textContent = ''; return; }
   el.hidden = false;
   el.className = `notice ${kind}`;
@@ -238,11 +240,14 @@ function paint() {
 
   // The verdict lives in the navbar now: the badge names the conclusion, the
   // tooltip carries the sentence that explains it.
-  const v = verdict(sum);
-  const vEl = $('verdict');
-  vEl.textContent = t(v.short);
-  vEl.title = t(v.text);
-  vEl.dataset.key = v.key;
+  // The badge belongs to whichever mode is on screen.
+  if (mode === 'live') {
+    const v = verdict(sum);
+    const vEl = $('verdict');
+    vEl.textContent = t(v.short);
+    vEl.title = t(v.text);
+    vEl.dataset.key = v.key;
+  }
 
   renderCards();
   // Cold samples are dropped from the series rather than mapped to null: null
@@ -439,6 +444,7 @@ function exportGuard() {
 }
 
 async function doExport(kind) {
+  if (mode === 'log') { analyze.exportAs(kind); return; }
   if (!exportGuard()) return;
   try {
     if (kind === 'csv') exportCSV(state.log);
@@ -476,9 +482,59 @@ function buildReport() {
 }
 
 function doReport() {
+  if (mode === 'log') { analyze.report(); return; }
   if (!exportGuard()) return;
   try { openReport(buildReport(), t); notice(''); }
   catch (err) { notice(err.message, 'err'); }
+}
+
+/* ---- modes ------------------------------------------------------------------
+
+   Live measures from this browser; Log file reads what the ping command
+   wrote somewhere else. One page, because the reader's question is the same
+   — how is this line? — and the statistics, report and exports are shared.
+   `#log` in the address bar opens straight into the second mode.
+
+   Switching to the log stops a live run: a probe loop ticking away behind a
+   screen that is not showing it would keep spending the line it measures. */
+
+let mode = 'live';
+
+function setMode(next, { push = true } = {}) {
+  if (next === mode) return;
+  if (next === 'log' && state.running) stop();
+  mode = next;
+  document.body.dataset.mode = mode;
+  $('appLive').hidden = mode !== 'live';
+  $('appAnalyze').hidden = mode !== 'log';
+  $('modeLive').setAttribute('aria-pressed', String(mode === 'live'));
+  $('modeLog').setAttribute('aria-pressed', String(mode === 'log'));
+  $('modeLive').classList.toggle('active', mode === 'live');
+  $('modeLog').classList.toggle('active', mode === 'log');
+  $('btnClear').title = mode === 'log' ? t('Close this log') : t('Clear all samples and statistics');
+  $('notice').hidden = true; $('aNotice').hidden = true;
+  if (push) history.replaceState(history.state, '', mode === 'log' ? '#log' : location.pathname + location.search);
+  if (mode === 'log') analyze.activate();
+  else { analyze.deactivate(); paint(); }
+}
+
+/* Drop a file anywhere: it can only mean "read this", so it switches mode. */
+function bindDrop() {
+  const over = $('dropOver');
+  let depth = 0;
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; depth++; over.hidden = false; });
+  window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) over.hidden = true; });
+  window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0; over.hidden = true;
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    setMode('log');
+    analyze.loadFile(file);
+  });
 }
 
 /* ---- wiring --------------------------------------------------------------- */
@@ -487,7 +543,13 @@ function init() {
   restore();
 
   $('btnRun').addEventListener('click', () => (state.running ? stop() : start()));
-  $('btnClear').addEventListener('click', clearAll);
+  $('btnClear').addEventListener('click', () => (mode === 'log' ? analyze.clear() : clearAll()));
+  $('modeLive').addEventListener('click', () => setMode('live'));
+  $('modeLog').addEventListener('click', () => setMode('log'));
+  $('btnOpen').addEventListener('click', () => $('aFileInput').click());
+  window.addEventListener('hashchange', () => setMode(location.hash === '#log' ? 'log' : 'live', { push: false }));
+  analyze.init({ notice });
+  bindDrop();
   $('intervalSel').addEventListener('change', (e) => {
     state.interval = +e.target.value;
     $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
@@ -531,13 +593,15 @@ function init() {
   // Phone URL-bar show/hide changes the height without firing a resize in some
   // browsers; the visual viewport does report it.
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-  window.addEventListener('carino:langchange', () => { setRunUI(state.running); renderConnection(); paint(); });
+  window.addEventListener('carino:langchange', () => { setRunUI(state.running); renderConnection(); if (mode === 'live') paint(); });
 
   $('stunHost').textContent = STUN_SERVER;
   $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
   state.targets = parseTargets();
+  document.body.dataset.mode = 'live';
   paint();
   renderConnection();
+  if (location.hash === '#log') setMode('log', { push: false });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

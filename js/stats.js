@@ -29,8 +29,11 @@
 const CAP = 5000;
 
 export class Series {
-  constructor(label) {
+  /** `cap` bounds a live run; an imported log passes Infinity, because a log
+      cut to its last 5000 lines would silently describe a different run. */
+  constructor(label, cap = CAP) {
     this.label = label;
+    this.cap = cap;
     this.rtts = [];        // warm successes only — what the statistics describe
     this.all = [];         // every settled probe, for the chart and the log
     this.sent = 0;
@@ -42,29 +45,34 @@ export class Series {
   push(sample) {
     this.sent++;
     this.all.push(sample);
-    if (this.all.length > CAP) this.all.shift();
+    if (this.all.length > this.cap) this.all.shift();
 
     if (!sample.ok) { this.lost++; return; }
     this.lastDetail = sample.detail;
     if (sample.cold) { this.cold = sample; return; }   // excluded, on purpose
     this.rtts.push(sample.rtt);
-    if (this.rtts.length > CAP) this.rtts.shift();
+    if (this.rtts.length > this.cap) this.rtts.shift();
+    this.sorted = null;
   }
 
   get count() { return this.rtts.length; }
   get loss() { return this.sent ? (this.lost / this.sent) * 100 : 0; }
 
-  /** Quantile by nearest-rank on a sorted copy. */
+  /** Quantile by nearest-rank on a sorted copy, kept until the next push —
+      a snapshot asks for two quantiles, and on an imported log each sort is
+      hundreds of thousands of values. */
   q(p) {
     const n = this.rtts.length;
     if (!n) return null;
-    const s = [...this.rtts].sort((a, b) => a - b);
+    const s = this.sorted || (this.sorted = Float64Array.from(this.rtts).sort());
     const i = Math.min(n - 1, Math.max(0, Math.ceil((p / 100) * n) - 1));
     return s[i];
   }
 
-  get min() { return this.rtts.length ? Math.min(...this.rtts) : null; }
-  get max() { return this.rtts.length ? Math.max(...this.rtts) : null; }
+  // Read off the sorted copy, not Math.min(...rtts): spreading a few hundred
+  // thousand arguments overflows the call stack.
+  get min() { return this.rtts.length ? this.q(0) : null; }
+  get max() { return this.rtts.length ? this.q(100) : null; }
   get mean() {
     const n = this.rtts.length;
     return n ? this.rtts.reduce((a, b) => a + b, 0) / n : null;
@@ -97,7 +105,7 @@ export class Series {
   }
 
   reset() {
-    this.rtts = []; this.all = []; this.sent = 0; this.lost = 0; this.cold = null;
+    this.rtts = []; this.all = []; this.sent = 0; this.lost = 0; this.cold = null; this.sorted = null;
   }
 }
 
@@ -109,8 +117,12 @@ export function combine(seriesList) {
   const live = seriesList.filter((s) => s.count > 0);
   const sent = seriesList.reduce((a, s) => a + s.sent, 0);
   const lost = seriesList.reduce((a, s) => a + s.lost, 0);
-  const pool = seriesList.flatMap((s) => s.rtts);
-  const sorted = [...pool].sort((a, b) => a - b);
+  let n = 0;
+  for (const s of seriesList) n += s.rtts.length;
+  const sorted = new Float64Array(n);
+  let o = 0;
+  for (const s of seriesList) { sorted.set(s.rtts, o); o += s.rtts.length; }
+  sorted.sort();
   const q = (p) => (sorted.length
     ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))]
     : null);
@@ -195,7 +207,7 @@ export function lossEvents(seriesList) {
   for (const s of seriesList) {
     const bad = s.all.filter((x) => !x.ok);
     if (!bad.length) continue;
-    const kinds = [...new Set(bad.map((x) => (x.timedOut ? 'timeout' : 'unreachable')))];
+    const kinds = [...new Set(bad.map((x) => x.status || (x.timedOut ? 'timeout' : 'unreachable')))];
     out.push({
       target: s.label,
       count: bad.length,

@@ -1,0 +1,11 @@
+PING google.com (142.250.72.14) 56(84) bytes of data.
+64 bytes from lax17s49-in-f14.1e100.net (142.250.72.14): icmp_seq=1 ttl=117 time=12.3 ms
+64 bytes from lax17s49-in-f14.1e100.net (142.250.72.14): icmp_seq=2 ttl=117 time=11.9 ms
+64 bytes from lax17s49-in-f14.1e100.net (142.250.72.14): icmp_seq=4 ttl=117 time=12.8 ms
+64 bytes from lax17s49-in-f14.1e100.net (142.250.72.14): icmp_seq=5 ttl=117 time=12.1 ms
+64 bytes from lax17s49-in-f14.1e100.net (142.250.72.14): icmp_seq=5 ttl=117 time=12.4 ms (DUP!)
+From 192.168.1.1 icmp_seq=6 Destination Host Unreachable
+^C
+--- google.com ping statistics ---
+8 packets transmitted, 4 received, +1 duplicates, +1 errors, 50% packet loss, time 7010ms
+rtt min/avg/max/mdev = 11.900/12.275/12.800/0.334 ms

@@ -1,0 +1,6 @@
+
+Source        Destination     IPV4Address      IPV6Address                              Bytes    Time(ms) 
+------        -----------     -----------      -----------                              -----    -------- 
+DESKTOP-1     google.com      142.250.72.14                                             32       12       
+DESKTOP-1     google.com      142.250.72.14                                             32       15       
+DESKTOP-1     1.1.1.1         1.1.1.1                                                   32       6        

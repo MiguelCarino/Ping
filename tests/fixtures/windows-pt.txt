@@ -1,0 +1,3 @@
+Disparando 8.8.8.8 com 32 bytes de dados:
+Resposta de 8.8.8.8: bytes=32 tempo=30ms TTL=117
+Esgotado o tempo limite do pedido.

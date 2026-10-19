@@ -1,0 +1,4 @@
+Seq,Timestamp,Target,Status,RTT (ms),Source,DNS (ms),TCP (ms),TLS (ms),TTFB (ms),Transfer (ms),Total (ms),Phase
+1,2026-10-19T15:00:00.000Z,cloudflare.com,OK,34.2,total (no timing permission),,,,,,34.2,warm
+2,2026-10-19T15:00:02.000Z,cloudflare.com,TIMEOUT,,,,,,,,,
+3,2026-10-19T15:00:04.000Z,8.8.8.8,OK,20.1,total (no timing permission),,,,,,20.1,warm

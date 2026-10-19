@@ -111,7 +111,7 @@ const stat = (value, label, cls) =>
 const row = (label, value) => (value ? `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>` : '');
 
 /** Per-target distribution. The table the reader actually needs. */
-function targetsTable(targets, t) {
+function targetsTable(targets, t, icmp = false) {
   if (!targets.length) return `<p class="muted">${esc(t('No targets were measured.'))}</p>`;
   const rows = targets.map((s, i) => {
     const sev = s.loss >= 5 ? 'bad' : s.loss > 0 ? 'warn' : 'ok';
@@ -127,7 +127,7 @@ function targetsTable(targets, t) {
       <td class="r nw">${esc(ms(s.p95))}</td>
       <td class="r nw">${esc(ms(s.max))}</td>
       <td class="r nw">${esc(ms(s.jitter))}</td>
-      <td>${esc(s.detail ? 'TTFB' : t('total only'))}</td>
+      <td>${esc(icmp ? 'ICMP' : (s.detail ? 'TTFB' : t('total only')))}</td>
       <td><span class="sev ${sev}">${esc(word)}</span></td>
     </tr>`;
   }).join('');
@@ -141,14 +141,16 @@ function targetsTable(targets, t) {
 }
 
 /** Peaks (biggest excursion above that target's own median) and per-target lows. */
-function extremesTable(extremes, t) {
+const clockTime = (at) => new Date(at).toLocaleTimeString();
+
+function extremesTable(extremes, t, fmt = clockTime) {
   if (!extremes.length) return '';
   const rows = extremes.map((e) => `<tr>
     <td><span class="sev ${e.kind === 'high' ? 'warn' : 'ok'}">${esc(e.kind === 'high' ? t('Peak') : t('Low'))}</span></td>
     <td class="mono">${esc(e.target)}</td>
     <td class="r nw">${esc(ms(e.rtt))}</td>
     <td class="r nw">${e.over != null ? '+' + esc(ms(e.over)) : '<span class="muted">—</span>'}</td>
-    <td class="mono nw">${esc(new Date(e.at).toLocaleTimeString())}</td>
+    <td class="mono nw">${esc(fmt(e.at))}</td>
   </tr>`).join('');
   return `<table class="ext"><thead><tr>
       <th>${esc(t('Extreme'))}</th><th>${esc(t('Target'))}</th>
@@ -157,16 +159,18 @@ function extremesTable(extremes, t) {
     <p class="muted" style="font-size:10.5px">${esc(t("Peaks are ranked by how far a sample sat above its own target's median, so a spike on a fast host still appears next to a slow host's normal traffic. Lows are each target's best sample."))}</p>`;
 }
 
-function lossTable(lossEvents, t) {
+const KIND = { timeout: 'timeout', unreachable: 'unreachable', ttl: 'TTL exceeded', error: 'error' };
+
+function lossTable(lossEvents, t, fmt = clockTime) {
   if (!lossEvents.length) {
     return `<div class="clean"><b>${esc(t('No probe went unanswered.'))}</b><br>${esc(t('Every request issued during this run came back.'))}</div>`;
   }
   const rows = lossEvents.map((e) => `<tr>
     <td class="mono">${esc(e.target)}</td>
     <td class="r">${esc(e.count)}</td>
-    <td>${esc(e.kinds.join(', '))}</td>
-    <td class="mono">${esc(e.firstAt ? new Date(e.firstAt).toLocaleTimeString() : '—')}</td>
-    <td class="mono">${esc(e.lastAt ? new Date(e.lastAt).toLocaleTimeString() : '—')}</td>
+    <td>${esc(e.kinds.map((k) => t(KIND[k] || k)).join(', '))}</td>
+    <td class="mono">${esc(e.firstAt != null ? fmt(e.firstAt) : '—')}</td>
+    <td class="mono">${esc(e.lastAt != null ? fmt(e.lastAt) : '—')}</td>
   </tr>`).join('');
   return `<table><thead><tr>
       <th>${esc(t('Target'))}</th><th class="r">${esc(t('Unanswered'))}</th>
@@ -181,6 +185,7 @@ function lossTable(lossEvents, t) {
  * }}
  */
 export function reportHtml(model, t = (x) => x) {
+  if (model.source) return logReportHtml(model, t);
   const { summary, env, speed, stun, run } = model;
   const publicHost = model.hostname || (stun && stun.publicIP) || null;
   const conn = env.connection;
@@ -258,12 +263,16 @@ export function reportHtml(model, t = (x) => x) {
   </footer>
 </div>`;
 
+  return wrap(`${title}${run.targetsLabel ? ' — ' + run.targetsLabel : ''}`, body, t);
+}
+
+function wrap(title, body, t) {
   return `<!DOCTYPE html>
 <html lang="${esc(document.documentElement.lang || 'en')}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}${run.targetsLabel ? ' — ' + esc(run.targetsLabel) : ''}</title>
+<title>${esc(title)}</title>
 <style>${styles()}</style>
 </head>
 <body>
@@ -271,6 +280,87 @@ export function reportHtml(model, t = (x) => x) {
 ${body}
 </body>
 </html>`;
+}
+
+/**
+ * The same sheet for a saved log. What changes is the provenance: there is no
+ * connection to describe — the run happened somewhere else, some time ago —
+ * so the header names the file, how it was read, and what time axis it had,
+ * and a section reports the cross-check against ping's own summaries.
+ *
+ * @param model {{ summary, targets, extremes, lossEvents, verdict, method,
+ *   fmtTime, source: { file, size, format, encoding, basis, span, sessions,
+ *   lines, unparsed, checks: { checked, matched, issues: [{line, target, text}] } } }}
+ */
+function logReportHtml(model, t) {
+  const { summary, source: src } = model;
+  const title = t('Ping log report');
+  const fmt = model.fmtTime || clockTime;
+  const chk = src.checks;
+
+  const checkBlock = !chk.checked
+    ? `<p class="muted">${esc(t('This log carries no summary blocks, so there was nothing to cross-check against.'))}</p>`
+    : chk.matched === chk.checked
+      ? `<div class="clean"><b>${esc(t('Every summary matches.'))}</b><br>${esc(t('{n} of {m} summary blocks agree with the parsed samples — sent, received, min, average and max.').replace('{n}', chk.matched).replace('{m}', chk.checked))}</div>`
+      : `<div class="alert"><b>${esc(t('{n} of {m} summary blocks disagree.').replace('{n}', chk.checked - chk.matched).replace('{m}', chk.checked))}</b></div>
+        <table><thead><tr><th>${esc(t('Line'))}</th><th>${esc(t('Target'))}</th><th>${esc(t('Difference'))}</th></tr></thead><tbody>
+        ${chk.issues.slice(0, 20).map((x) => `<tr><td class="mono nw">${esc(x.line)}</td><td class="mono">${esc(x.target)}</td><td>${esc(x.text)}</td></tr>`).join('')}
+        </tbody></table>`;
+
+  const body = `<div class="sheet">
+  <div class="rule"></div>
+  <h1>${esc(title)}</h1>
+  <p class="sub">${esc(src.file)}</p>
+
+  <dl class="meta">
+    ${row(t('File'), src.file)}
+    ${row(t('Size'), src.size)}
+    ${row(t('Format'), src.format)}
+    ${row(t('Encoding'), src.encoding)}
+    ${row(t('Time'), src.basis)}
+    ${row(t('Span'), src.span)}
+    ${row(t('Targets'), model.targets.map((x) => x.label).join(', '))}
+    ${row(t('Sessions'), String(src.sessions))}
+    ${row(t('Lines'), String(src.lines))}
+    ${row(t('Unrecognised lines'), String(src.unparsed))}
+    ${row(t('Filtered to'), src.range || '')}
+  </dl>
+
+  <h2>${esc(t('Summary'))}</h2>
+  <div class="stats">
+    ${stat(summary.sent, t('Probes'))}
+    ${stat(ms(summary.min, 0), t('Best'))}
+    ${stat(ms(summary.mean, 0), t('Average'))}
+    ${stat(ms(summary.p95, 0), t('95th pct'))}
+    ${stat(ms(summary.max, 0), t('Worst'))}
+    ${stat(pct(summary.loss), t('Loss'), summary.loss >= 5 ? 'crit' : summary.loss > 0 ? 'adv' : 'good')}
+  </div>
+  <div class="${summary.loss >= 5 || (summary.p95 != null && summary.p95 > 250) ? 'alert' : 'clean'}">
+    <b>${esc(t('Assessment'))}:</b> ${esc(model.verdict)}
+  </div>
+
+  <h2>${esc(t('Per target'))}</h2>
+  ${targetsTable(model.targets, t, true)}
+
+  <h2>${esc(t('Peaks and lows'))}</h2>
+  ${extremesTable(model.extremes, t, fmt)}
+
+  <h2>${esc(t('Unanswered probes'))}</h2>
+  ${lossTable(model.lossEvents, t, fmt)}
+
+  <h2>${esc(t('Cross-check against ping'))}</h2>
+  ${checkBlock}
+
+  <h2>${esc(t('Method and limits'))}</h2>
+  <div class="note">${esc(model.method)}</div>
+  <p class="muted" style="font-size:10.5px">${esc(t('This report summarises {n} samples. The complete per-sample record is not printed here by design — export CSV, XLSX or ODS from the tool for that.').replace('{n}', summary.sent))}</p>
+
+  <footer>
+    <span>${esc(src.file)}</span>
+    <span>${esc(t('Generated with Ping · ping.carino.systems'))}</span>
+  </footer>
+</div>`;
+  return wrap(`${title} — ${src.file}`, body, t);
 }
 
 /** Open the report in a new tab, the way Topo does. */

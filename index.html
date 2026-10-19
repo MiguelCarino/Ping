@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="icon" href="logo.webp" />
   <title>Ping — Carino Systems</title>
-  <meta name="description" content="Client-side HTTPS latency measurement: round trip, jitter, packet loss and the DNS/TLS/TTFB split, straight from your browser. Nothing leaves the page." />
+  <meta name="description" content="Client-side latency measurement and ping log analysis: round trip, jitter, packet loss and the DNS/TLS/TTFB split from your browser, or any saved ping output read in the tab. Nothing leaves the page." />
   <meta name="theme-color" content="#050505" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="fonts/carino-fonts.css" />
@@ -15,9 +15,15 @@
   <!-- App controls; carino-navbar.js moves this into the shared navbar. -->
   <header class="cs-header" data-carino-strip>
     <div class="cs-right" data-carino-actions>
-      <span class="live-chip" id="modeChip" title="Measurement state">IDLE</span>
+      <!-- Two modes, one page: measure from this browser, or read a log that
+           the ping command wrote somewhere else. -->
+      <span class="seg modeseg" role="group" aria-label="Mode">
+        <button class="cs-btn seg-btn" id="modeLive" aria-pressed="true" title="Measure from this browser" data-i18n>Live</button>
+        <button class="cs-btn seg-btn" id="modeLog" aria-pressed="false" title="Analyze a saved ping log" data-i18n>Log file</button>
+      </span>
+      <span class="live-chip" id="modeChip" title="Measurement state" data-only="live">IDLE</span>
       <span class="verdict-badge" id="verdict" data-key="idle" title="No data yet." data-i18n>No data</span>
-      <select class="cs-btn cs-select" id="intervalSel" title="Time between probes">
+      <select class="cs-btn cs-select" id="intervalSel" title="Time between probes" data-only="live">
         <option value="500">0.5s</option>
         <option value="1000">1s</option>
         <option value="2000" selected>2s</option>
@@ -25,7 +31,8 @@
         <option value="10000">10s</option>
         <option value="30000">30s</option>
       </select>
-      <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring">
+      <button class="cs-btn primary" id="btnOpen" title="Open a ping log from this computer — it is read here and never uploaded" data-only="log" data-i18n>Open log</button>
+      <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring" data-only="live">
         <span class="btn-label">Start</span>
       </button>
       <button class="cs-btn" id="btnClear" title="Clear all samples and statistics" data-i18n>Clear</button>
@@ -41,7 +48,7 @@
 
   <!-- The whole app is one screen: this element owns the remaining height, and
        only the panes inside it ever scroll. -->
-  <main class="app">
+  <main class="app" id="appLive">
 
     <!-- Targets -->
     <section class="strip targets">
@@ -119,6 +126,153 @@
 
   </main>
 
+  <!-- Log file mode. Same shape as the live screen — strip, tiles, cards,
+       chart, table — so a reading sits in the same place in both. -->
+  <main class="app analyze" id="appAnalyze" hidden>
+    <input type="file" id="aFileInput" accept=".txt,.log,.csv,.out,text/plain,text/csv" hidden />
+    <p class="notice" id="aNotice" hidden></p>
+
+    <section class="dropzone" id="aEmpty">
+      <div class="dz-inner">
+        <h2 data-i18n>Analyze a ping log</h2>
+        <p class="dz-lead" data-i18n>Drop a file anywhere on this page, choose one, or paste the output. It is read in this tab and never uploaded.</p>
+        <div class="dz-actions">
+          <button class="cs-btn primary" id="aChoose" data-i18n>Choose a file</button>
+          <button class="cs-btn" id="aExample" title="An hour of ping -D against two hosts, with an outage, congestion and a route change" data-i18n>Load an example</button>
+        </div>
+        <textarea id="aPaste" class="field paste" spellcheck="false" placeholder="…or paste ping output here" aria-label="Paste ping output"></textarea>
+        <div class="dz-actions"><button class="cs-btn" id="aAnalyzePaste" data-i18n>Analyze pasted text</button></div>
+        <ul class="dz-formats">
+          <li><b>Linux</b> <span data-i18n>iputils, with or without -D / -O</span></li>
+          <li><b>BusyBox</b> <span data-i18n>routers, Alpine, containers</span></li>
+          <li><b>macOS / BSD</b></li>
+          <li><b>Windows</b> <span data-i18n>ping and ping -t, in any language</span></li>
+          <li><b>PowerShell</b> <span>Test-Connection</span></li>
+          <li><b>CSV</b> <span data-i18n>exported from this tool</span></li>
+        </ul>
+        <p class="muted small" data-i18n-html>Timestamps added by a wrapper are understood too — <code>ts</code>, <code>$(date)</code>, <code>Get-Date</code>, ISO dates. Without one, times are estimated from the sequence number.</p>
+      </div>
+    </section>
+
+    <div class="loaded" id="aLoaded" hidden>
+      <section class="strip srcstrip">
+        <span class="cfield filetag"><i data-i18n>File</i> <b id="aFile">—</b> <small class="muted" id="aFileMeta"></small></span>
+        <label class="slabel" for="aFormat" data-i18n>Format</label>
+        <select class="cs-btn cs-select" id="aFormat" title="Detected automatically; force a format if the guess is wrong">
+          <option value="">Auto</option>
+          <option value="linux">Linux (iputils)</option>
+          <option value="busybox">BusyBox</option>
+          <option value="bsd">macOS / BSD</option>
+          <option value="windows">Windows</option>
+          <option value="pwsh">PowerShell</option>
+          <option value="csv">Carino Ping CSV</option>
+        </select>
+        <span class="chip basis" id="aBasis"></span>
+        <select class="cs-btn cs-select" id="aInterval" title="The log has no clock: one probe per this many seconds">
+          <option value="200">0.2 s</option>
+          <option value="500">0.5 s</option>
+          <option value="1000">1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+          <option value="30000">30 s</option>
+          <option value="60000">60 s</option>
+        </select>
+        <select class="cs-btn cs-select" id="aDateOrder" title="The dates in this log could be read either way" hidden>
+          <option value="dmy">DD/MM</option>
+          <option value="mdy">MM/DD</option>
+        </select>
+        <button class="chip chip-btn" id="aCheck" hidden></button>
+        <button class="chip chip-btn warn" id="aUnparsed" title="Lines that matched no known format — click to see them" hidden></button>
+        <button class="cs-btn tiny" id="aDetails" title="How the file was read, the summary cross-check and every line that was skipped" data-i18n>Details</button>
+      </section>
+
+      <section class="tiles" aria-label="Summary">
+        <div class="stat-tile"><span class="st-label" data-i18n>Best</span><b class="st-value num accent" id="aBest">—</b><span class="st-sub" data-i18n>closest to true path delay</span></div>
+        <div class="stat-tile"><span class="st-label">p50</span><b class="st-value num" id="aP50">—</b><span class="st-sub" data-i18n>typical request</span></div>
+        <div class="stat-tile"><span class="st-label">p95</span><b class="st-value num" id="aP95">—</b><span class="st-sub" data-i18n>the unlucky one in twenty</span></div>
+        <div class="stat-tile"><span class="st-label" data-i18n>Jitter</span><b class="st-value num" id="aJitter">—</b><span class="st-sub" data-i18n>swing between samples</span></div>
+        <div class="stat-tile" id="aTileLoss"><span class="st-label" data-i18n>Loss</span><b class="st-value num" id="aLoss">—</b><span class="st-sub" id="aLossSub">—</span></div>
+        <div class="stat-tile"><span class="st-label" data-i18n>Probes</span><b class="st-value num" id="aSent">0</b><span class="st-sub" data-i18n>in the log</span></div>
+        <div class="stat-tile"><span class="st-label" data-i18n>Span</span><b class="st-value num" id="aSpan">—</b><span class="st-sub" id="aSpanSub">—</span></div>
+      </section>
+
+      <div class="grid">
+        <div class="cards" id="aCards" aria-label="Per-target results"></div>
+        <div class="rightcol">
+          <section class="panel pane chartpane">
+            <div class="pane-head">
+              <div class="tabs" id="aTabs" role="tablist">
+                <button class="tab" role="tab" data-tab="time" data-i18n>Over time</button>
+                <button class="tab" role="tab" data-tab="dist" data-i18n>Distribution</button>
+                <button class="tab" role="tab" data-tab="loss" data-i18n>Loss</button>
+                <button class="tab" role="tab" data-tab="hour" data-i18n>Hour of day</button>
+                <button class="tab" role="tab" data-tab="ttl">TTL</button>
+              </div>
+              <span class="rangechip" id="aRange" hidden><span id="aRangeText"></span><button id="aRangeClear" aria-label="Show the whole log" title="Show the whole log (or double-click the chart)">✕</button></span>
+              <button class="cs-btn tiny" id="aLogScale" title="Log scale — use it when one target is far slower than the others" data-i18n>Log scale</button>
+            </div>
+            <div class="legend" id="aLegend"></div>
+            <div class="canvas-wrap" id="aChartWrap">
+              <canvas id="aChart" aria-label="Chart of the log"></canvas>
+              <div class="crosshair" id="aCross" hidden></div>
+              <div class="tip" id="aTip" role="status" hidden></div>
+            </div>
+            <p class="chartnote" id="aChartNote"></p>
+          </section>
+
+          <section class="panel pane logpane">
+            <div class="pane-head filters">
+              <h2><span data-i18n>Samples</span> <small class="muted num" id="aCount"></small></h2>
+              <select class="cs-btn cs-select" id="aFTarget" aria-label="Target"></select>
+              <select class="cs-btn cs-select" id="aFStatus" aria-label="Status">
+                <option value="all" data-i18n>All statuses</option>
+                <option value="replies" data-i18n>Replies</option>
+                <option value="lost" data-i18n>Lost (any)</option>
+                <option value="timeout" data-i18n>Timeout</option>
+                <option value="unreachable" data-i18n>Unreachable</option>
+                <option value="ttl" data-i18n>TTL exceeded</option>
+                <option value="error" data-i18n>Error</option>
+                <option value="dup" data-i18n>Duplicate</option>
+              </select>
+              <label class="opt"><span>RTT ≥</span><input type="number" min="0" step="any" id="aFRtt" class="field xs" placeholder="ms" aria-label="Minimum round trip in ms" /></label>
+              <label class="opt" id="aFAroundLabel" title="Only the samples around each lost probe — the context of every incident">
+                <input type="checkbox" id="aFAround" /><span data-i18n>Around incidents ±</span>
+                <input type="number" min="0" max="500" id="aFAroundN" class="field xs" value="3" aria-label="Samples either side" disabled />
+              </label>
+            </div>
+            <div class="lhead ahead">
+              <span class="c-line" data-i18n>Line</span>
+              <span class="c-time" data-i18n>Time</span>
+              <span class="c-tgt" data-i18n>Target</span>
+              <span class="c-from" data-i18n>Responder</span>
+              <span class="c-seq">Seq</span>
+              <span class="c-ttl">TTL</span>
+              <span class="c-rtt">RTT</span>
+              <span class="c-st" data-i18n>Status</span>
+            </div>
+            <div class="pane-body vpane" id="aPane">
+              <div class="vspacer" id="aSpacer"><div id="aRows"></div></div>
+              <p class="empty" id="aRowsEmpty" data-i18n hidden>No rows match these filters.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="busy" id="aBusy" hidden><span class="spinner"></span><span id="aBusyMsg"></span></div>
+  </main>
+
+  <div class="dropover" id="dropOver" hidden><div data-i18n>Drop the log to analyze it — it stays in this tab</div></div>
+
+  <dialog id="dlgDetails" class="dlg" aria-labelledby="dlgDetailsTitle">
+    <div class="dlg-head">
+      <h2 id="dlgDetailsTitle" data-i18n>How this log was read</h2>
+      <button class="cs-btn" id="aDetailsClose" aria-label="Close" data-i18n>Close</button>
+    </div>
+    <div class="dlg-body" id="aDetailsBody"></div>
+  </dialog>
+
   <!-- The long explanation lives here so the app itself stays one screen. -->
   <dialog id="dlgMethod" class="dlg" aria-labelledby="dlgMethodTitle">
     <div class="dlg-head">
@@ -163,6 +317,14 @@
       <h3 data-i18n>Why it cannot name your network interface</h3>
       <p data-i18n-html>There is no web API for it, and that is deliberate rather than missing. Chrome and Firefox replace WebRTC host candidates with a random <code>&lt;uuid&gt;.local</code> name precisely so a page cannot enumerate the network it is on. <code>navigator.connection.type</code> is the nearest thing and only Chromium on Android and ChromeOS populates it; on desktop it is undefined, and Firefox and Safari do not ship the API at all. The Interface field reads <em>not published</em> rather than guessing from the effective type.</p>
 
+      <h3 data-i18n>Reading a saved log</h3>
+      <p data-i18n-html><strong>Log file</strong> mode reads output the <code>ping</code> command already wrote — real ICMP round trips, taken by whatever machine ran it. The file is read in this tab and never uploaded. Linux, BusyBox, macOS, Windows in any language, PowerShell <code>Test-Connection</code> and this tool's own CSV are recognised automatically, as are timestamps added by <code>ts</code>, <code>$(date)</code> or <code>Get-Date</code>. Files saved by cmd in an OEM code page or by PowerShell in UTF-16 are decoded correctly.</p>
+      <ul>
+        <li data-i18n-html><strong>Linux prints nothing for a lost packet.</strong> A sequence number that never appears is counted as lost and marked <em>inferred</em>; packets lost after the last reply are recovered from the summary's <code>packets transmitted</code>.</li>
+        <li data-i18n-html><strong>Most logs have no clock.</strong> Without <code>ping -D</code> or a wrapper the time axis is estimated from the sequence number and the interval you choose, and the strip says so.</li>
+        <li data-i18n-html><strong>ping's own summary is a free check.</strong> Where one is printed, the parsed counts and min/avg/max are compared against it, run by run.</li>
+        <li data-i18n-html><strong>mdev is not jitter.</strong> ping's <code>mdev</code> is a standard deviation; the jitter here is RFC 3550's mean change between consecutive replies. The cards show both.</li>
+      </ul>
       <h3 data-i18n>Other things worth knowing</h3>
       <p class="muted small" data-i18n-html><strong>IP addresses.</strong> A few answer — <code>8.8.8.8</code>, <code>1.1.1.1</code> and <code>9.9.9.9</code> serve HTTPS with certificates valid for the address — but you are timing their web server, not the address's reachability. Most others have no HTTPS listener and come back unreachable, which says nothing about whether the host is up.</p>
       <p class="muted small" data-i18n>A 404 is a perfectly good round trip and is timed like any other reply, so the probe path does not have to exist. Some targets will log 404s in devtools; the measurement is unaffected.</p>

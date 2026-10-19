@@ -1,0 +1,4 @@
+PING 1.1.1.1 (1.1.1.1) 56(84) bytes of data.
+[1760886000.100000] 64 bytes from 1.1.1.1: icmp_seq=1 ttl=57 time=5.12 ms
+[1760886001.101000] 64 bytes from 1.1.1.1: icmp_seq=2 ttl=57 time=5.40 ms
+[1760886004.104000] 64 bytes from 1.1.1.1: icmp_seq=5 ttl=56 time=6.01 ms

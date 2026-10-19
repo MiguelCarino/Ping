@@ -1,0 +1,12 @@
+
+Haciendo ping a google.com [142.250.72.14] con 32 bytes de datos:
+Respuesta desde 142.250.72.14: bytes=32 tiempo=14ms TTL=117
+Respuesta desde 142.250.72.14: bytes=32 tiempo=16ms TTL=117
+Tiempo de espera agotado para esta solicitud.
+Respuesta desde 192.168.1.254: bytes=32 tiempo<1m TTL=64
+
+Estadísticas de ping para 142.250.72.14:
+    Paquetes: enviados = 4, recibidos = 3, perdidos = 1
+    (25% perdidos),
+Tiempos aproximados de ida y vuelta en milisegundos:
+    Mínimo = 0ms, Máximo = 16ms, Media = 10ms

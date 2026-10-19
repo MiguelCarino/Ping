@@ -1,0 +1,9 @@
+
+   Destination: google.com
+
+Ping Source           Address                   Latency BufferSize Status
+                                                   (ms)        (B)
+---- ------           -------                   ------- ---------- ------
+   1 DESKTOP-1        142.250.72.14                  12         32 Success
+   2 DESKTOP-1        *                               *          *  TimedOut
+   3 DESKTOP-1        142.250.72.14                  14         32 Success

@@ -1,8 +1,8 @@
 # Ping
 
-Client-side network latency measurement — part of [Carino Systems](https://carino.systems). Live at **ping.carino.systems**.
+Client-side network latency measurement and ping log analysis — part of [Carino Systems](https://carino.systems). Live at **ping.carino.systems**.
 
-Round trip, jitter, packet loss and the DNS/TCP/TLS/TTFB split for any set of websites, measured from your own browser. Nothing is uploaded; the only traffic is the probes themselves, going to the hosts you name.
+Two modes on one page. **Live** measures round trip, jitter, packet loss and the DNS/TCP/TLS/TTFB split for any set of websites, from your own browser. **Log file** (`#log`) reads output the `ping` command already wrote — on Linux, a router, a Mac or Windows — and analyzes it: detection, a filterable table, charts, the same statistics, exports and report. Nothing is uploaded in either mode; the only traffic is the live probes themselves, going to the hosts you name.
 
 ## What it measures, and what it cannot
 
@@ -63,6 +63,40 @@ Background tabs are paused by default: browsers clamp timers to roughly one seco
 
 **One timer, not two.** A separate timeout selector asked the reader to reason about the relationship between "how often" and "how long before I give up", which has one sensible answer. The timeout is three intervals clamped to 2–10 s, and the interval control's tooltip says what that works out to.
 
+## Log file mode
+
+Drop a file anywhere on the page (from either mode), choose one, or paste the output. It is read with `File.arrayBuffer()`, decoded and parsed in a Web Worker, and never leaves the tab.
+
+**Formats, detected automatically** — the first 400 lines are scored against each format's patterns, and the strip shows what was found (*Auto: Windows · Español*) with an override:
+
+| Format | Notes |
+|---|---|
+| Linux (iputils) | Fedora, Debian, Ubuntu; `-D` epoch prefixes, `-O` "no answer yet", `(DUP!)`, `From … Destination Host Unreachable`, IPv6 headers |
+| BusyBox | Alpine, OpenWrt, routers, containers: `seq=` from 0, `round-trip min/avg/max` |
+| macOS / BSD | `Request timeout for icmp_seq N`, seq-less unreachables (with the hex dump that follows), `stddev` |
+| Windows | `ping` / `ping -t` in English, Spanish, Portuguese, Russian, Japanese, German and French. Replies are matched by structure (`address: … =32 … =12ms TTL=117`), not words, so `tiempo<1m` and `時間 =12ms` read the same; headers, timeouts and summaries use a phrase table per language |
+| PowerShell | `Test-Connection`, both the 5.1 and the 7 table |
+| Carino Ping CSV | this tool's own export, from either mode, so a run can be reloaded |
+
+Timestamp prefixes from wrappers are stripped first: `[epoch]` (`-D`), ISO, `$(date)`, `ts` (no year — taken from the file's date), PowerShell `Get-Date` (`10/19/2026 9:59:58 AM - …`), or a bare clock. Numeric dates are ambiguous; a field over 12 anywhere in the file decides DD/MM vs MM/DD, and when nothing does, the language does and a selector appears.
+
+**Encodings.** `ping > log.txt` in cmd writes the console's OEM code page and PowerShell 5's `>` writes UTF-16LE. BOMs are honoured, BOM-less UTF-16 is recognised by its zero bytes, and a file that is not UTF-8 is decoded as each of CP850, Windows-1252, CP866, Windows-1251 and Shift_JIS, keeping whichever reads the most localized ping words correctly. CP850 is not in the WHATWG encoding list, so its table is in `parse.js`.
+
+**What the log does not say, recovered:**
+
+- **Linux prints nothing for a lost packet** (without `-O`). A missing `icmp_seq` is an inferred timeout; packets lost after the last reply come from the summary's `packets transmitted`; the 16-bit counter's wrap at 65535 is followed. Late replies replace their placeholder, and duplicates are kept in the table but out of every statistic.
+- **Most logs have no clock.** Without one the time axis is sequence × the interval chosen on screen (Windows timeouts are charged the 4 s they waited), and the strip says *Time: estimated*. Times of day — and so the hour-of-day view — exist only when the log has them.
+- **ping's summary is a free check.** Each run's sent/received and min/avg/max are compared against what ping printed. Windows counts *Destination host unreachable* as received; this tool counts it as lost, and the check compares the Windows way.
+- **Where it is going** comes from the header (`PING host (ip)`, `Pinging host [ip]`). The responder is kept separately — `From 192.168.1.1 … Unreachable` is the gateway answering, not the target — and the card names any other address that answered. One file can hold many runs (a cron job appending `ping -c 10`); each header starts a new run, and runs to the same target are analyzed together.
+
+**Filters.** The time range (drag across the chart; double-click or ✕ to reset) and the target scope everything — tiles, cards, charts, table, exports and report. Status, an RTT threshold and *around incidents ±N* (the samples either side of every loss) filter only the table; applying them to the statistics would be meaningless.
+
+**Charts.** Over time (each pixel column is a bucket: min–max band plus mean line, loss as red rules whose strength is the share lost — 600 000 samples draw as fast as 600), distribution (per-target share per bin; log-spaced bins when targets differ by more than 4×, everything above p99 in one overflow bin), loss per time bucket, hour of day (median per target per hour on that target's own ramp, lossy hours outlined and labelled), and TTL (a step is a route change). Every chart has a hover readout; series colours follow the target, and the order passes a colour-vision check on adjacent pairs.
+
+**Table.** Virtualized: the DOM holds the rows in view, never the 600 000 behind them. Hovering a row shows the raw log line, or why it was inferred. Every line the parser could not read is listed under *Details*, with the summary cross-check.
+
+Exports carry the rows the table shows — sequence, timestamp in the log's own basis, target, responder, status, RTT, TTL, source line — and re-import losslessly. The report swaps the connection section for the file's provenance and adds the cross-check.
+
 ## Exports and the report
 
 **CSV / XLSX / ODS** carry the complete per-sample record, phase columns included. CSV needs no library; SheetJS is vendored and loaded only when one of those buttons is pressed.
@@ -92,13 +126,18 @@ js/export.js   CSV native; SheetJS loaded from ./vendor on demand
 js/speed.js    downlink throughput, parallel streams, before the run
 js/client.js   client identifier, browser/platform, reverse DNS, what the OS publishes
 js/report.js   the standalone printable report (Topo's approach, no PDF lib)
-js/app.js      targets, per-target loops, rendering
+js/parse.js    log decoding, format detection and parsing — pure, no DOM
+js/parse-worker.js   runs parse.js off the main thread
+js/analyze.js  the Log file mode: filters, charts, virtual table, exports
+js/app.js      modes, targets, per-target loops, rendering
 vendor/        xlsx (vendored, never a CDN)
 fonts/         IBM Plex Sans/Mono + Red Hat Display, self-hosted
 carino-navbar.js · carino-clock.js · carino-lang.js   the shared fleet chrome
 ```
 
 SheetJS is fetched only when someone presses XLSX or ODS, so a page view that never exports a spreadsheet pays none of it.
+
+The parser has its own tests, with a fixture per format, language and encoding (`tests/fixtures/`): `node --test tests/parse.test.mjs`.
 
 Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet. **The report is translated too** — every heading, column, verdict and the whole method paragraph, with the document's own `lang` attribute set to match. That is checked programmatically rather than by eye: a test walks every `t()` key reachable from the report and asserts it resolves in all four non-English locales.
 
