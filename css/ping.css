@@ -358,7 +358,7 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
 .pc-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0;}
 .pc-head b{font-family:var(--mono);font-size:.78rem;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pc-head span{font-family:var(--mono);font-size:.66rem;flex-shrink:0;}
-.pc-steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;counter-reset:st;}
+.pc-steps{list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;counter-reset:st;}
 .pc-steps li{counter-increment:st;font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;
   color:var(--text-muted);display:flex;align-items:center;gap:6px;}
 .pc-steps li::before{content:counter(st);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;

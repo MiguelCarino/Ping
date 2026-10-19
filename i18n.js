@@ -373,6 +373,7 @@ const I18N = {
     "samples": "muestras",
     "Handing over the samples…": "Entregando las muestras…",
     "Building charts and table…": "Construyendo gráficas y tabla…",
+    "XLSX and ODS hold at most 1,048,576 rows. Filter the table (a time range, a target, \"Lost\") or export CSV, which has no limit.": "XLSX y ODS admiten como máximo 1,048,576 filas. Filtra la tabla (un rango de tiempo, un destino, «Perdidos») o exporta CSV, que no tiene límite.",
   },
 
   'pt-BR': {
@@ -727,6 +728,7 @@ const I18N = {
     "samples": "amostras",
     "Handing over the samples…": "Entregando as amostras…",
     "Building charts and table…": "Montando gráficos e tabela…",
+    "XLSX and ODS hold at most 1,048,576 rows. Filter the table (a time range, a target, \"Lost\") or export CSV, which has no limit.": "XLSX e ODS comportam no máximo 1.048.576 linhas. Filtre a tabela (um intervalo de tempo, um destino, \"Perdidos\") ou exporte CSV, que não tem limite.",
   },
 
   ja: {
@@ -1081,6 +1083,7 @@ const I18N = {
     "samples": "サンプル",
     "Handing over the samples…": "サンプルを受け渡し中…",
     "Building charts and table…": "グラフと表を作成中…",
+    "XLSX and ODS hold at most 1,048,576 rows. Filter the table (a time range, a target, \"Lost\") or export CSV, which has no limit.": "XLSX と ODS は最大 1,048,576 行までです。表を絞り込む（時間範囲・宛先・「損失」）か、上限のない CSV でエクスポートしてください。",
   },
 
   ru: {
@@ -1435,6 +1438,7 @@ const I18N = {
     "samples": "замеров",
     "Handing over the samples…": "Передача замеров…",
     "Building charts and table…": "Построение графиков и таблицы…",
+    "XLSX and ODS hold at most 1,048,576 rows. Filter the table (a time range, a target, \"Lost\") or export CSV, which has no limit.": "XLSX и ODS вмещают не больше 1 048 576 строк. Отфильтруйте таблицу (диапазон времени, цель, «Потерянные») или выгрузите CSV — у него нет ограничения.",
   },
 };
 

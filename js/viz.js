@@ -441,10 +441,18 @@ export function drawTimeChart(canvas, series, opts) {
 export function drawHistogram(canvas, series, opts = {}) {
   if (!canvas) return null;
   const { ctx, W, H } = setup(canvas);
-  const pool = [];
-  for (const s of series) for (const v of s.values) pool.push(v);
+  // `opts.sorted` is every value of every series, already sorted — passed in
+  // by a caller that draws the same data repeatedly.
+  let pool = opts.sorted;
+  if (!pool) {
+    let m = 0;
+    for (const s of series) m += s.values.length;
+    pool = new Float64Array(m);
+    let o = 0;
+    for (const s of series) { pool.set(s.values, o); o += s.values.length; }
+    pool.sort();
+  }
   if (pool.length < 2) { emptyMsg(ctx, W, H, opts.empty || ''); return null; }
-  pool.sort((a, b) => a - b);
   const lo = pool[0];
   let hi = pool[Math.min(pool.length - 1, Math.floor(pool.length * 0.99))];
   const overflow = hi < pool[pool.length - 1];

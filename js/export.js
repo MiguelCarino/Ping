@@ -62,13 +62,19 @@ function download(blob, name) {
 
 /** CSV needs no library at all — RFC 4180 quoting is four lines. */
 export function exportCSV(log, schema = LIVE) {
-  const rows = [schema.columns, ...schema.rows(log)];
   const esc = (v) => {
     const s = v == null ? '' : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const csv = rows.map((r) => r.map(esc).join(',')).join('\r\n');
-  download(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `${schema.prefix}-${stamp()}.csv`);
+  // Built in slices of 50 000 rows and handed to the Blob as parts: a log of
+  // several million rows would not fit in one string (Chrome caps a string
+  // near 512 million characters) and would not need to.
+  const parts = ['﻿' + schema.columns.map(esc).join(',')];
+  for (let a = 0; a < log.length; a += 50000) {
+    const rows = schema.rows(log.slice(a, a + 50000));
+    parts.push('\r\n' + rows.map((r) => r.map(esc).join(',')).join('\r\n'));
+  }
+  download(new Blob(parts, { type: 'text/csv;charset=utf-8' }), `${schema.prefix}-${stamp()}.csv`);
 }
 
 export async function exportSheet(log, format /* 'xlsx' | 'ods' */, schema = LIVE) {

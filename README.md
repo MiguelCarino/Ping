@@ -65,7 +65,17 @@ Background tabs are paused by default: browsers clamp timers to roughly one seco
 
 ## Log file mode
 
-Drop a file anywhere on the page (from either mode), choose one, or paste the output. It is read with `File.arrayBuffer()`, decoded and parsed in a Web Worker, and never leaves the tab.
+Drop a file anywhere on the page (from either mode), choose one, or paste the output. It never leaves the tab.
+
+**Built for big logs.** A long PowerShell capture runs to hundreds of megabytes and millions of lines, so nothing in the pipeline holds an object per sample or the file as one string:
+
+- The **File itself** goes to a Web Worker (cloning a File copies a handle, not its bytes), which reads it as a stream and decodes as it goes into line-aligned chunks of ~4 M characters — Chrome caps a single string near 512 M characters, and splitting a whole file into a line array would copy it again.
+- Samples are stored as **typed-array columns** (~35 bytes each: line, session, target, seq, time, RTT, TTL, bytes, responder id, status, flags) and **transferred** to the page, not cloned. Responders are interned.
+- Everything after the line loop is **linear**: a counting sort groups samples by run, one pass checks every summary, one pass per run interpolates the clock across outages. Late-reply bookkeeping is a 65 536-entry ring, not a map of every packet ever sent.
+- The decoded text **stays in the worker**. Row tooltips fetch only the lines in view; a re-parse after an override reuses it. Each load gets its own worker, so cancelling one — or dropping a bad file — leaves the log on screen intact.
+- The table maps scroll position proportionally past ~8 M px, below every browser's element-height cap. CSV is written in 50 000-row parts; XLSX/ODS refuse past their 1 048 576-row limit and say why.
+
+Measured: a 457 MB UTF-16 PowerShell log, 3 million lines, loads in about 11 s and leaves the page heap at ~270 MB; tabs redraw in 100–300 ms.
 
 **Formats, detected automatically** — the first 400 lines are scored against each format's patterns, and the strip shows what was found (*Auto: Windows · Español*) with an override:
 
@@ -130,8 +140,8 @@ js/export.js   CSV native; SheetJS loaded from ./vendor on demand
 js/speed.js    downlink throughput, parallel streams, before the run
 js/client.js   client identifier, browser/platform, reverse DNS, what the OS publishes
 js/report.js   the standalone printable report (Topo's approach, no PDF lib)
-js/parse.js    log decoding, format detection and parsing — pure, no DOM
-js/parse-worker.js   runs parse.js off the main thread
+js/parse.js    streamed decoding, format detection, columnar parsing — pure, no DOM
+js/parse-worker.js   one per load: reads the File, parses, keeps the text
 js/analyze.js  the Log file mode: filters, charts, virtual table, exports
 js/app.js      modes, targets, per-target loops, rendering
 vendor/        xlsx (vendored, never a CDN)

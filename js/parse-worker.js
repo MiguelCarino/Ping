@@ -1,30 +1,35 @@
-/* parse-worker.js — runs parse.js off the main thread.
+/* parse-worker.js — runs the parse engine off the main thread.
 
-   A week of `ping -t` is ~600 000 lines. Parsing that is fast (a few hundred
-   milliseconds) but not free, and on the main thread it would freeze the page
-   for exactly the moment someone is watching it. Progress goes back as
-   `{ id, progress }` messages along the way, so the page can show where the
-   parse is. The first message carries
-   the file's bytes, decoded here; a re-parse after an override sends the text
-   back instead, so the decode is not repeated. */
+   A log can be hundreds of megabytes. The worker is handed the File itself
+   (cloning a File copies a handle, not its bytes), reads and decodes it in a
+   stream, parses it, and keeps the decoded text: the page receives only the
+   sample columns, transferred rather than copied, and asks for individual
+   lines when it needs them (the row tooltips). A re-parse after an override
+   reuses the text already here.
 
-import { decode, parseLog } from './parse.js';
+   Messages in:   { id, op: 'file', file, opts } | { id, op: 'text', text, opts }
+                  | { id, op: 'reparse', opts }  | { id, op: 'lines', nums }
+   Messages out:  { id, progress } along the way, then { id, ok, res | lines }
+                  or { id, ok: false, error }. */
 
-self.onmessage = (e) => {
-  const { id, buf, text: given, opts } = e.data;
+import { createEngine, transferables } from './parse.js';
+
+const engine = createEngine();
+
+self.onmessage = async (e) => {
+  const { id, op, opts } = e.data;
   const progress = (p) => self.postMessage({ id, progress: p });
   try {
-    let text = given, encoding = null;
-    if (text == null) {
-      progress({ phase: 'decode' });
-      ({ text, encoding } = decode(buf));
+    if (op === 'lines') {
+      self.postMessage({ id, ok: true, lines: engine.lines(e.data.nums) });
+      return;
     }
-    const res = parseLog(text, { ...opts, onProgress: progress });
-    res.encoding = encoding || opts.encoding || null;
-    // Copying the result back is its own pause on a big log; say so.
-    progress({ phase: 'send', rows: res.samples.length });
-    self.postMessage({ id, ok: true, res, text: given == null ? text : null });
+    if (op === 'file') await engine.loadFile(e.data.file, progress);
+    else if (op === 'text') engine.loadText(e.data.text);
+    const res = engine.parse(opts, progress);
+    progress({ phase: 'send', rows: res.n });
+    self.postMessage({ id, ok: true, res }, transferables(res));
   } catch (err) {
-    self.postMessage({ id, ok: false, error: String(err && err.message || err) });
+    self.postMessage({ id, ok: false, error: String((err && err.message) || err) });
   }
 };

@@ -82,39 +82,186 @@ function scoreText(s) {
   return n;
 }
 
-export function decode(buf) {
-  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  const dec = (label, bytes, fatal = false) => new TextDecoder(label, { fatal }).decode(bytes);
-  if (b[0] === 0xFF && b[1] === 0xFE) return { text: dec('utf-16le', b.subarray(2)), encoding: 'UTF-16LE' };
-  if (b[0] === 0xFE && b[1] === 0xFF) return { text: dec('utf-16be', b.subarray(2)), encoding: 'UTF-16BE' };
-  if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) return { text: dec('utf-8', b.subarray(3)), encoding: 'UTF-8' };
-
+/** Which decoder a file needs, from its first bytes. `fallback` is the
+    legacy code page to switch to if a BOM-less file turns out not to be
+    valid UTF-8 somewhere past the head. */
+export function sniffEncoding(head) {
+  const b = head;
+  if (b[0] === 0xFF && b[1] === 0xFE) return { name: 'UTF-16LE', label: 'utf-16le', skip: 2 };
+  if (b[0] === 0xFE && b[1] === 0xFF) return { name: 'UTF-16BE', label: 'utf-16be', skip: 2 };
+  if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) return { name: 'UTF-8', label: 'utf-8', skip: 3 };
   // BOM-less UTF-16: ASCII text puts a zero in every other byte.
   const n = Math.min(b.length, 4096);
   let even = 0, odd = 0;
   for (let i = 0; i < n; i++) if (!b[i]) { if (i & 1) odd++; else even++; }
-  if (n > 16 && odd > n / 4 && even < n / 50) return { text: dec('utf-16le', b), encoding: 'UTF-16LE' };
-  if (n > 16 && even > n / 4 && odd < n / 50) return { text: dec('utf-16be', b), encoding: 'UTF-16BE' };
+  if (n > 16 && odd > n / 4 && even < n / 50) return { name: 'UTF-16LE', label: 'utf-16le', skip: 0 };
+  if (n > 16 && even > n / 4 && odd < n / 50) return { name: 'UTF-16BE', label: 'utf-16be', skip: 0 };
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(b, { stream: true });
+    return { name: 'UTF-8', label: 'utf-8', skip: 0, fatal: true, fallback: legacyPick(b) };
+  } catch {
+    return legacyPick(b);
+  }
+}
 
-  try { return { text: dec('utf-8', b, true), encoding: 'UTF-8' }; } catch { /* not UTF-8 */ }
-
-  // A legacy code page. Score each candidate on the head of the file by the
-  // localized words it decodes correctly, and keep the winner.
-  const head = b.subarray(0, 262144);
+/** A legacy code page. Score each candidate on the head of the file by the
+    localized words it decodes correctly, and keep the winner. */
+function legacyPick(head) {
   const cands = [
-    ['CP850', (x) => decodeCp850(x)],
-    ['Windows-1252', (x) => dec('windows-1252', x)],
-    ['CP866', (x) => dec('ibm866', x)],
-    ['Windows-1251', (x) => dec('windows-1251', x)],
-    ['Shift_JIS', (x) => dec('shift_jis', x)],
+    { name: 'CP850', custom: 'cp850' },
+    { name: 'Windows-1252', label: 'windows-1252' },
+    { name: 'CP866', label: 'ibm866' },
+    { name: 'Windows-1251', label: 'windows-1251' },
+    { name: 'Shift_JIS', label: 'shift_jis' },
   ];
   let best = cands[0], bestScore = -Infinity;
   for (const c of cands) {
     let s;
-    try { s = scoreText(c[1](head)); } catch { continue; }
+    try { s = scoreText(c.custom ? decodeCp850(head) : new TextDecoder(c.label).decode(head)); } catch { continue; }
     if (s > bestScore) { best = c; bestScore = s; }
   }
-  return { text: best[1](b), encoding: best[0] };
+  return { ...best, skip: 0 };
+}
+
+function makeDecoder(enc) {
+  if (enc.custom === 'cp850') return { decode: (b) => (b ? decodeCp850(b) : '') };
+  return new TextDecoder(enc.label, { fatal: !!enc.fatal });
+}
+
+/** Decode a whole buffer to one string — small inputs and the tests. */
+export function decode(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let enc = sniffEncoding(b.subarray(0, 262144));
+  try {
+    return { text: makeDecoder(enc).decode(b.subarray(enc.skip || 0)), encoding: enc.name };
+  } catch {
+    enc = enc.fallback;
+    return { text: makeDecoder(enc).decode(b), encoding: enc.name };
+  }
+}
+
+/* ---- the engine ----------------------------------------------------------------
+
+   Owns the decoded text. It reads a File in a stream, decodes as it goes and
+   cuts the text into line-aligned chunks of a few million characters; it then
+   parses those chunks, and later answers for individual lines (the row
+   tooltips) without the page ever holding the text. The worker runs one; when
+   no worker can start, the page runs one itself. */
+
+const CHUNK = 1 << 22;                         // ~4M characters per chunk
+
+class Chunker {
+  constructor() { this.chunks = []; this.firstLine = []; this.lines = 0; this.pending = []; this.size = 0; this.carry = ''; }
+
+  add(piece) {
+    if (!piece) return;
+    this.pending.push(piece);
+    this.size += piece.length;
+    if (this.size >= CHUNK) this.flush(false);
+  }
+
+  flush(end) {
+    let s = this.carry + this.pending.join('');
+    this.pending = []; this.size = 0; this.carry = '';
+    if (!end) {
+      const cut = s.lastIndexOf('\n');
+      // No newline in four million characters is not a ping log line, but it
+      // must not grow without bound either: it becomes a chunk of its own.
+      if (cut < 0 && s.length < CHUNK * 4) { this.carry = s; return; }
+      if (cut >= 0) { this.carry = s.slice(cut + 1); s = s.slice(0, cut + 1); }
+    }
+    if (!s) return;
+    this.firstLine.push(this.lines + 1);
+    this.chunks.push(s);
+    let p = -1;
+    while ((p = s.indexOf('\n', p + 1)) !== -1) this.lines++;
+    if (end && !s.endsWith('\n')) this.lines++;
+  }
+}
+
+async function readDecode(file, enc, onProgress) {
+  const reader = file.stream().getReader();
+  const dec = makeDecoder(enc);
+  const ch = new Chunker();
+  let skip = enc.skip || 0, done = 0, tick = 0;
+  try {
+    for (;;) {
+      const { done: end, value } = await reader.read();
+      if (end) break;
+      done += value.length;
+      let v = value;
+      if (skip) { const k = Math.min(skip, v.length); v = v.subarray(k); skip -= k; }
+      ch.add(dec.decode(v, { stream: true }));
+      if (onProgress && (++tick & 7) === 0) onProgress({ phase: 'read', done, total: file.size });
+    }
+    ch.add(dec.decode());
+  } catch (err) {
+    reader.cancel().catch(() => {});
+    throw err;
+  }
+  ch.flush(true);
+  if (onProgress) onProgress({ phase: 'read', done: file.size, total: file.size });
+  return { chunks: ch.chunks, firstLine: ch.firstLine, lines: ch.lines, encoding: enc.name };
+}
+
+function fromText(text) {
+  const ch = new Chunker();
+  for (let i = 0; i < text.length; i += CHUNK) ch.add(text.slice(i, i + CHUNK));
+  ch.flush(true);
+  return { chunks: ch.chunks, firstLine: ch.firstLine, lines: ch.lines, encoding: null };
+}
+
+export function createEngine() {
+  let src = null;
+  const offsets = new Map();        // chunk index -> line start offsets, built on demand
+
+  return {
+    async loadFile(file, onProgress) {
+      const head = new Uint8Array(await file.slice(0, 262144).arrayBuffer());
+      const enc = sniffEncoding(head);
+      try {
+        src = await readDecode(file, enc, onProgress);
+      } catch (err) {
+        // Valid UTF-8 in the head, invalid further in: read it again as the
+        // code page the head scored best for.
+        if (!enc.fallback) throw err;
+        src = await readDecode(file, enc.fallback, onProgress);
+      }
+      offsets.clear();
+    },
+    loadText(text) { src = fromText(text); offsets.clear(); },
+    get encoding() { return src ? src.encoding : null; },
+    parse(opts, onProgress) {
+      const res = parseChunks(src.chunks, { ...opts, totalLines: src.lines, onProgress });
+      res.encoding = src.encoding || opts.encoding || null;
+      return res;
+    },
+    /** The text of the given (1-based) lines. */
+    lines(nums) {
+      if (!src) return nums.map(() => '');
+      return nums.map((n) => {
+        const fl = src.firstLine;
+        let lo = 0, hi = fl.length - 1;
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fl[mid] <= n) lo = mid; else hi = mid - 1; }
+        const c = src.chunks[lo];
+        if (!c) return '';
+        let off = offsets.get(lo);
+        if (!off) {
+          const list = [0];
+          let p = -1;
+          while ((p = c.indexOf('\n', p + 1)) !== -1) list.push(p + 1);
+          off = Uint32Array.from(list);
+          if (offsets.size > 8) offsets.delete(offsets.keys().next().value);
+          offsets.set(lo, off);
+        }
+        const k = n - fl[lo];
+        if (k < 0 || k >= off.length) return '';
+        let e = k + 1 < off.length ? off[k + 1] - 1 : c.length;
+        if (e > off[k] && c.charCodeAt(e - 1) === 13) e--;
+        return c.slice(off[k], e);
+      });
+    },
+  };
 }
 
 /* ---- timestamp prefixes ---------------------------------------------------- */
@@ -144,8 +291,8 @@ function hour12(h, ap) {
     a field above 12 anywhere in the file; failing that, the language decides. */
 function sniffDateOrder(lines, lang) {
   let dmy = 0, mdy = 0, ymd = 0, numeric = 0;
-  const lim = Math.min(lines.length, 20000);
-  for (let i = 0; i < lim; i++) {
+  // `lines` is already bounded: the head plus a sample from across the file.
+  for (let i = 0; i < lines.length; i++) {
     const m = RX_NUM.exec(lines[i]);
     if (!m) continue;
     numeric++;
@@ -537,29 +684,178 @@ const CSV_STATUS = {
   OK: 'ok', TIMEOUT: 'timeout', UNREACHABLE: 'unreachable', 'TTL EXCEEDED': 'ttl', ERROR: 'error', DUP: 'dup',
 };
 
-/** Reads the CSV the live view and this view both export. */
-function parseCsv(lines, onProgress) {
-  const first = lines[0].replace(/^﻿/, '');
-  const d = first.includes(';') && !first.includes(',') ? ';' : ',';
-  const head = splitCsv(first, d).map((h) => h.trim());
-  const col = (name) => head.indexOf(name);
-  const c = {
-    seq: col('Seq'), ts: col('Timestamp'), basis: col('Time basis'), tgt: col('Target'), ip: col('Target IP'),
-    from: col('Responder'), st: col('Status'), rtt: col('RTT (ms)'), ttl: col('TTL'), bytes: col('Bytes'),
-    sess: col('Session'), phase: col('Phase'),
+/* ---- storage ----------------------------------------------------------------
+
+   One typed array per field, not one object per sample. An object costs well
+   over a hundred bytes; these columns cost about 35 per sample, so a 6.5
+   million-line log is ~230 MB instead of gigabytes — and typed arrays move to
+   the page by transfer, with no copy. Missing numbers are NaN (seq, at, rtt)
+   or -1 (ttl, bytes); responders are interned, `from` holds the index. */
+
+export const STATUS = ['ok', 'timeout', 'unreachable', 'ttl', 'error', 'dup'];
+const ST = { ok: 0, timeout: 1, unreachable: 2, ttl: 3, error: 4, dup: 5 };
+export const F_INFERRED = 1, F_LT = 2, F_WINREPLY = 4, F_TAIL = 8, F_COLD = 16;
+export const COLUMNS = ['line', 'sess', 'tgt', 'seq', 'at', 'rtt', 'ttl', 'bytes', 'from', 'status', 'flags'];
+
+class Store {
+  constructor() {
+    this.n = 0;
+    this.cap = 0;
+    this.strings = [''];
+    this.sidx = new Map([['', 0]]);
+    this.grow(1 << 14);
+  }
+
+  grow(cap) {
+    const re = (T, old) => { const a = new T(cap); if (old) a.set(old.subarray(0, this.n)); return a; };
+    this.line = re(Uint32Array, this.line); this.sess = re(Uint32Array, this.sess); this.tgt = re(Uint16Array, this.tgt);
+    this.seq = re(Float64Array, this.seq); this.at = re(Float64Array, this.at); this.clock = re(Float64Array, this.clock);
+    this.rtt = re(Float64Array, this.rtt); this.ttl = re(Int16Array, this.ttl); this.bytes = re(Int32Array, this.bytes);
+    this.from = re(Uint32Array, this.from); this.status = re(Uint8Array, this.status); this.flags = re(Uint8Array, this.flags);
+    this.cap = cap;
+  }
+
+  str(s) {
+    if (!s) return 0;
+    let i = this.sidx.get(s);
+    if (i == null) { i = this.strings.length; this.strings.push(s); this.sidx.set(s, i); }
+    return i;
+  }
+
+  push(o) {
+    if (this.n === this.cap) this.grow(this.cap * 2);
+    const i = this.n++;
+    this.write(i, o);
+    return i;
+  }
+
+  write(i, o) {
+    this.line[i] = o.line; this.sess[i] = o.sess; this.tgt[i] = o.tgt;
+    this.seq[i] = o.seq ?? NaN; this.at[i] = o.at ?? NaN; this.clock[i] = o.clock ?? NaN;
+    this.rtt[i] = o.rtt ?? NaN; this.ttl[i] = o.ttl ?? -1; this.bytes[i] = o.bytes ?? -1;
+    this.from[i] = this.str(o.from); this.status[i] = ST[o.status];
+    this.flags[i] = (o.inferred ? F_INFERRED : 0) | (o.lt ? F_LT : 0) | (o.winReply ? F_WINREPLY : 0)
+      | (o.tail ? F_TAIL : 0) | (o.cold ? F_COLD : 0);
+  }
+
+  /** Trimmed copies, ready to transfer. */
+  columns() {
+    const cols = {};
+    for (const k of COLUMNS) cols[k] = this[k].slice(0, this.n);
+    return cols;
+  }
+}
+
+/** The buffers to list in postMessage's transfer argument. */
+export function transferables(res) {
+  return res.cols ? COLUMNS.map((k) => res.cols[k].buffer) : [];
+}
+
+/** One sample as a plain object — for tests and the odd single-row read. */
+export function sampleAt(res, i) {
+  const c = res.cols;
+  const nn = (v) => (v === v ? v : null);
+  return {
+    line: c.line[i], sess: c.sess[i], tgt: c.tgt[i], seq: nn(c.seq[i]), at: nn(c.at[i]), rtt: nn(c.rtt[i]),
+    ttl: c.ttl[i] < 0 ? null : c.ttl[i], bytes: c.bytes[i] < 0 ? null : c.bytes[i], from: res.strings[c.from[i]],
+    status: STATUS[c.status[i]], inferred: !!(c.flags[i] & F_INFERRED), lt: !!(c.flags[i] & F_LT),
+    winReply: !!(c.flags[i] & F_WINREPLY), tail: !!(c.flags[i] & F_TAIL), cold: !!(c.flags[i] & F_COLD),
   };
+}
+export function toObjects(res) {
+  const out = new Array(res.n);
+  for (let i = 0; i < res.n; i++) out[i] = sampleAt(res, i);
+  return out;
+}
+
+/* ---- lines, without one giant string --------------------------------------
+
+   The text arrives as a list of chunks, each ending on a line boundary, so no
+   string ever has to hold the whole file — Chrome caps a string at about 512
+   million characters, which an 800 MB UTF-16 log alone would come close to,
+   and splitting into an array of lines would copy it all a second time. */
+
+function forEachLine(chunks, fn) {
+  let n = 0;
+  for (const c of chunks) {
+    const L = c.length;
+    let p = 0;
+    while (p < L) {
+      let e = c.indexOf('\n', p);
+      if (e < 0) e = L;
+      const end = e > p && c.charCodeAt(e - 1) === 13 ? e - 1 : e;
+      fn(c.slice(p, end), ++n);
+      p = e + 1;
+    }
+  }
+  return n;
+}
+
+function headLines(chunks, max) {
+  const out = [];
+  for (const c of chunks) {
+    let p = 0;
+    while (p < c.length && out.length < max) {
+      let e = c.indexOf('\n', p);
+      if (e < 0) e = c.length;
+      out.push(c.slice(p, e > p && c.charCodeAt(e - 1) === 13 ? e - 1 : e));
+      p = e + 1;
+    }
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The head plus a few lines from every part of the file. Deciding DD/MM vs
+    MM/DD needs a day past the 12th, and on a long log the first 20 000
+    lines can all fall on the 1st. */
+function spread(chunks, head) {
+  if (chunks.length < 2) return head;
+  const out = head.slice();
+  const every = Math.max(1, Math.floor(chunks.length / 64));
+  for (let i = every; i < chunks.length; i += every) {
+    const c = chunks[i];
+    const at = c.indexOf('\n') + 1;              // skip a possibly partial first line
+    out.push(...headLines([c.slice(at, at + 4000)], 20));
+  }
+  return out;
+}
+
+function countLines(chunks) {
+  let n = 0;
+  for (const c of chunks) { let p = -1; while ((p = c.indexOf('\n', p + 1)) !== -1) n++; }
+  const last = chunks.length ? chunks[chunks.length - 1] : '';
+  if (last && !last.endsWith('\n')) n++;
+  return n;
+}
+
+/** Reads the CSV the live view and this view both export. */
+function parseCsv(chunks, total, onProgress) {
+  const store = new Store();
   const out = newResult('csv');
   const tIndex = new Map();
   const sIndex = new Map();
   let basis = null;
-  for (let i = 1; i < lines.length; i++) {
-    if (onProgress && !(i & 0x3fff)) onProgress({ phase: 'parse', done: i, total: lines.length, rows: out.samples.length });
-    const raw = lines[i];
-    if (!raw.trim()) continue;
+  let d = ',', c = null;
+  forEachLine(chunks, (raw, lineNo) => {
+    if (onProgress && !(lineNo & 0x3fff)) onProgress({ phase: 'parse', done: lineNo, total, rows: store.n });
+    if (!c) {
+      const first = raw.replace(/^﻿/, '');
+      d = first.includes(';') && !first.includes(',') ? ';' : ',';
+      const head = splitCsv(first, d).map((h) => h.trim());
+      const col = (name) => head.indexOf(name);
+      c = {
+        seq: col('Seq'), ts: col('Timestamp'), basis: col('Time basis'), tgt: col('Target'), ip: col('Target IP'),
+        from: col('Responder'), st: col('Status'), rtt: col('RTT (ms)'), ttl: col('TTL'), bytes: col('Bytes'),
+        sess: col('Session'), phase: col('Phase'),
+      };
+      return;
+    }
+    if (!raw.trim()) return;
     const f = splitCsv(raw, d);
     const target = (f[c.tgt] || '').trim();
     const status = CSV_STATUS[(f[c.st] || '').trim().toUpperCase()];
-    if (!target || !status) { pushCapped(out.unparsed, { line: i + 1, text: raw }, UNPARSED_CAP); out.unparsedCount++; continue; }
+    if (!target || !status) { pushCapped(out.unparsed, { line: lineNo, text: raw }, UNPARSED_CAP); out.unparsedCount++; return; }
     const key = target.toLowerCase();
     if (!tIndex.has(key)) {
       tIndex.set(key, out.targets.length);
@@ -569,7 +865,7 @@ function parseCsv(lines, onProgress) {
     const sKey = `${c.sess >= 0 ? f[c.sess] : 1}|${key}`;
     if (!sIndex.has(sKey)) {
       sIndex.set(sKey, out.sessions.length);
-      out.sessions.push(newSession(out.sessions.length, tgt, target, i + 1));
+      out.sessions.push(newSession(out.sessions.length, tgt, target, lineNo));
     }
     const sess = sIndex.get(sKey);
     const ts = (f[c.ts] || '').trim();
@@ -582,18 +878,17 @@ function parseCsv(lines, onProgress) {
     if (/^estimated/.test(b)) kind = 'estimated';
     basis = basis || kind;
     const rtt = num((f[c.rtt] || '').trim() || null);
-    const sample = {
-      line: i + 1, sess, tgt, seq: f[c.seq] ? +f[c.seq] : null, at, rtt: status === 'ok' || status === 'dup' ? rtt : null,
+    store.push({
+      line: lineNo, sess, tgt, seq: f[c.seq] ? +f[c.seq] : null, at, rtt: status === 'ok' || status === 'dup' ? rtt : null,
       ttl: c.ttl >= 0 && f[c.ttl] ? +f[c.ttl] : null, bytes: c.bytes >= 0 && f[c.bytes] ? +f[c.bytes] : null,
       from: c.from >= 0 ? (f[c.from] || '') : '', status, inferred: /inferred/.test(b),
       cold: c.phase >= 0 && /^cold/.test(f[c.phase] || ''),
-    };
-    if (status === 'dup') { out.dups++; out.samples.push(sample); continue; }
-    out.samples.push(sample);
-    out.sessions[sess].n++;
-  }
+    });
+    if (status === 'dup') out.dups++;
+    else out.sessions[sess].n++;
+  });
   out.basis = basis || 'absolute';
-  return out;
+  return { out, store };
 }
 
 /* ---- the parse ------------------------------------------------------------ */
@@ -603,7 +898,7 @@ function pushCapped(arr, v, cap) { if (arr.length < cap) arr.push(v); }
 function newResult(format) {
   return {
     format, lang: null, encoding: null, basis: 'estimated', dateOrder: null, dateAmbiguous: false,
-    interval: 1000, targets: [], sessions: [], samples: [], dups: 0,
+    interval: 1000, targets: [], sessions: [], n: 0, cols: null, strings: [''], dups: 0,
     notes: [], noteCount: 0, unparsed: [], unparsedCount: 0, lineCount: 0,
   };
 }
@@ -612,38 +907,42 @@ function newSession(id, tgt, label, line) {
 }
 
 /**
- * Re-join lines that a terminal or an editor wrapped. In a log whose lines
- * open with a timestamp or tag, a line that has neither and means nothing on
- * its own ("ttl=58 time=30.2 ms", "ms") is the tail of the line before it. The
- * absorbed line is blanked rather than removed, so line numbers still point
- * at the file. Logs without prefixes are left alone: there, a line without
- * one is normal.
+ * Should wrapped lines be re-joined? In a log whose lines open with a
+ * timestamp or tag, a line that has neither and means nothing on its own
+ * ("ttl=58 time=30.2 ms", "ms") is the tail of the line before it. Prefixed
+ * lines are counted against such fragments in the head of the file; wrapping
+ * one line into three makes two fragments per prefix, so the bound is
+ * generous, and a log with no prefixes at all is never touched.
  */
-function unwrap(lines) {
+function wantsUnwrap(head) {
   const ctx = { dateOrder: 'dmy', refYear: 2000, yearBump: 0, lastMonth: null, inWinStats: false, ps: 0 };
-  // Prefixed lines, against fragments: lines with no prefix that classify as
-  // nothing. Wrapping one line into three makes two fragments per prefix, so
-  // the bound is generous; a log with no prefixes at all is never touched.
   let n = 0, pre = 0, frag = 0;
-  for (let i = 0; i < lines.length && n < 2000; i++) {
-    const l = lines[i];
+  for (const l of head) {
     if (!l.trim()) continue;
-    n++;
+    if (++n > 2000) break;
     if (stripPrefixes(l, ctx)) pre++;
     else if (!classify(l.trim(), null, ctx)) frag++;
   }
-  if (pre < 3 || !frag || frag > pre * 4) return;
-  let last = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (!l.trim()) continue;
-    if (last >= 0 && !stripPrefixes(l, ctx) && !classify(l.trim(), null, ctx)) {
-      lines[last] = lines[last].replace(/\s+$/, '') + ' ' + l.trim();
-      lines[i] = '';
-      continue;
+  return pre >= 3 && frag > 0 && frag <= pre * 4;
+}
+
+/** Physical lines to logical ones: fragments are appended to the line they
+    belong to, which keeps its own (first) line number. */
+function logicalLines(chunks, unwrap, fn) {
+  if (!unwrap) return forEachLine(chunks, fn);
+  const ctx = { dateOrder: 'dmy', refYear: 2000, yearBump: 0, lastMonth: null, inWinStats: false, ps: 0 };
+  let held = null, heldNo = 0;
+  const n = forEachLine(chunks, (l, no) => {
+    if (!l.trim()) return;
+    if (held != null && !stripPrefixes(l, ctx) && !classify(l.trim(), null, ctx)) {
+      held = held.replace(/\s+$/, '') + ' ' + l.trim();
+      return;
     }
-    last = i;
-  }
+    if (held != null) fn(held, heldNo);
+    held = l; heldNo = no;
+  });
+  if (held != null) fn(held, heldNo);
+  return n;
 }
 
 /** Score the head of the file and pick a format (and, for Windows, a language). */
@@ -681,39 +980,49 @@ export function detect(lines) {
   return { format, lang, confidence: seen ? hit / seen : 0 };
 }
 
+/** Parse a log held in one string (tests, pasted text). */
+export function parseLog(text, opts = {}) {
+  return parseChunks([text], opts);
+}
+
+// Sequence numbers remembered per session for late replies and duplicates.
+// A 16-bit counter cannot tell more apart than this anyway.
+const SEQ_RING = 65536;
+
 /**
  * Parse a whole log.
- * @param text   decoded text
+ * @param chunks decoded text, as strings that each end on a line boundary
  * @param opts   { format?: forced format, interval?: ms per probe when the
  *                 log has no clock, dateOrder?: 'dmy'|'mdy'|'ymd', refYear?,
- *                 onProgress?: ({ phase, done, total, rows }) => void — called
- *                 every 16 384 lines }
+ *                 totalLines?, onProgress?: ({ phase, done, total, rows }) =>
+ *                 void — called every 16 384 lines }
  */
-export function parseLog(text, opts = {}) {
-  const lines = text.split(/\r?\n/);
-  if (lines.length && lines[lines.length - 1] === '') lines.pop();
-  unwrap(lines);
-  const det = detect(lines);
+export function parseChunks(chunks, opts = {}) {
+  const total = opts.totalLines || countLines(chunks);
+  const head = headLines(chunks, 20000);
+  const det = detect(head);
   const format = opts.format || det.format;
+  const onProgress = opts.onProgress;
   if (!format) {
     const r = newResult(null);
-    r.lineCount = lines.length;
+    r.lineCount = total;
     return r;
   }
   if (format === 'csv') {
-    const r = parseCsv(lines, opts.onProgress);
-    r.lineCount = lines.length;
-    finish(r, opts);
-    return r;
+    const { out, store } = parseCsv(chunks, total, onProgress);
+    out.lineCount = total;
+    seal(out, store, opts);
+    return out;
   }
 
   const fam = opts.format ? FAMILY[format] : null;
   const lang = det.lang || 'en';
-  const order = opts.dateOrder ? { order: opts.dateOrder, ambiguous: false } : sniffDateOrder(lines, lang);
+  const order = opts.dateOrder ? { order: opts.dateOrder, ambiguous: false } : sniffDateOrder(spread(chunks, head), lang);
 
   const out = newResult(format);
+  const store = new Store();
   out.lang = format === 'windows' ? lang : null;
-  out.lineCount = lines.length;
+  out.lineCount = total;
   out.dateOrder = order.order;
   out.dateAmbiguous = order.ambiguous;
   out.interval = opts.interval || 1000;
@@ -735,9 +1044,9 @@ export function parseLog(text, opts = {}) {
   let seqState = null;   // its sequence bookkeeping
 
   const targetFor = (label, ip) => {
-    const key = String(label).toLowerCase();
-    if (!tIndex.has(key)) { tIndex.set(key, out.targets.length); out.targets.push({ label, ip: ip || '' }); }
-    const i = tIndex.get(key);
+    const k = String(label).toLowerCase();
+    if (!tIndex.has(k)) { tIndex.set(k, out.targets.length); out.targets.push({ label, ip: ip || '' }); }
+    const i = tIndex.get(k);
     if (ip && !out.targets[i].ip) out.targets[i].ip = ip;
     return i;
   };
@@ -752,7 +1061,6 @@ export function parseLog(text, opts = {}) {
         pushSample({ line: cur.endLine, seq: seqState.next != null ? seqState.next++ : null, status: 'timeout', inferred: true, tail: true });
       }
     }
-    cur.check = checkSession(cur, out);
     cur = null;
     seqState = null;
   };
@@ -766,21 +1074,24 @@ export function parseLog(text, opts = {}) {
     cur.stream = key;
     out.sessions.push(cur);
     seqState = FAMILY[format] === 'unix' || format === 'pwsh'
-      ? { next: header && SEQ_BASE[format] != null ? SEQ_BASE[format] : null, wrap: 0, bySeq: new Map() }
+      ? {
+        next: header && SEQ_BASE[format] != null ? SEQ_BASE[format] : null, wrap: 0,
+        // A ring of the last SEQ_RING sequence numbers and where each went,
+        // in place of a map that would hold one entry per packet ever sent.
+        ringSeq: new Float64Array(SEQ_RING).fill(NaN), ringIdx: new Uint32Array(SEQ_RING),
+      }
       : null;
   };
 
   function pushSample(s) {
-    const sample = {
-      line: s.line, sess: cur.id, tgt: cur.tgt, seq: s.seq ?? null, at: s.at ?? null, clock: s.clock ?? null,
-      rtt: s.rtt ?? null, ttl: s.ttl ?? null, bytes: s.bytes ?? null, from: s.from || '',
-      status: s.status, inferred: !!s.inferred, lt: !!s.lt, winReply: !!s.winReply, tail: !!s.tail,
-    };
-    out.samples.push(sample);
-    if (sample.status !== 'dup') cur.n++;
-    cur.endLine = Math.max(cur.endLine, s.line);
-    return out.samples.length - 1;
+    const i = store.push({ ...s, sess: cur.id, tgt: cur.tgt });
+    if (s.status !== 'dup') cur.n++;
+    if (s.line > cur.endLine) cur.endLine = s.line;
+    return i;
   }
+
+  const remember = (st, seq, idx) => { const r = seq & (SEQ_RING - 1); st.ringSeq[r] = seq; st.ringIdx[r] = idx; };
+  const recall = (st, seq) => { const r = seq & (SEQ_RING - 1); return st.ringSeq[r] === seq ? st.ringIdx[r] : -1; };
 
   /** Place an event that carries a sequence number, inferring the gap before it. */
   function placeSeq(ev, line, stamp) {
@@ -792,42 +1103,41 @@ export function parseLog(text, opts = {}) {
     if (u >= st.next) {
       const gap = u - st.next;
       if (gap > 65535) st.next = u;        // a restart without a header, not an outage
-      for (let s = st.next; s < u; s++) {
-        st.bySeq.set(s, pushSample({ line, seq: s, status: 'timeout', inferred: true }));
-      }
-      st.bySeq.set(u, pushSample({ ...base, seq: u, status: ev.status }));
+      for (let s = st.next; s < u; s++) remember(st, s, pushSample({ line, seq: s, status: 'timeout', inferred: true }));
+      remember(st, u, pushSample({ ...base, seq: u, status: ev.status }));
       st.next = u + 1;
       return;
     }
     // Earlier than expected: a late reply, a duplicate, or the explicit verdict
     // on a packet already inferred lost.
-    const idx = st.bySeq.get(u);
-    if (idx == null) {
+    const idx = recall(st, u);
+    if (idx < 0) {
       const status = ev.status === 'ok' ? 'dup' : ev.status;
       if (status === 'dup') out.dups++;
       pushSample({ ...base, seq: u, status });
       return;
     }
-    const prev = out.samples[idx];
-    if (prev.status === 'ok') {
+    if (store.status[idx] === ST.ok) {
       if (ev.status === 'ok') { pushSample({ ...base, seq: u, status: 'dup' }); out.dups++; }
       return;
     }
     // Replace the placeholder (or an explicit timeout answered late) in place.
-    Object.assign(prev, {
-      line, rtt: ev.rtt ?? null, ttl: ev.ttl ?? null, bytes: ev.bytes ?? null, from: ev.from || '',
-      status: ev.status, inferred: false, lt: !!ev.lt, at: stamp.at ?? prev.at, clock: stamp.clock ?? prev.clock,
+    const prevAt = store.at[idx], prevClock = store.clock[idx];
+    store.write(idx, {
+      line, sess: store.sess[idx], tgt: store.tgt[idx], seq: u, rtt: ev.rtt, ttl: ev.ttl, bytes: ev.bytes,
+      from: ev.from, status: ev.status, lt: ev.lt,
+      at: stamp.at ?? (prevAt === prevAt ? prevAt : null), clock: stamp.clock ?? (prevClock === prevClock ? prevClock : null),
     });
   }
 
-  const onProgress = opts.onProgress;
-  for (let i = 0; i < lines.length; i++) {
-    if (onProgress && !(i & 0x3fff)) onProgress({ phase: 'parse', done: i, total: lines.length, rows: out.samples.length });
-    const lineNo = i + 1;
-    const raw = lines[i];
-    if (!raw.trim()) continue;
+  logicalLines(chunks, wantsUnwrap(head), (raw, lineNo) => {
+    if (onProgress && !(lineNo & 0x3fff)) onProgress({ phase: 'parse', done: lineNo, total, rows: store.n });
+    if (!raw.trim()) return;
     const st = stripPrefixes(raw, ctx);
     const body = (st ? st.rest : raw).trim();
+    // A wrapper stamps every line ping prints, the blank ones included:
+    // "01/09/2026 08:00:00 - " is an empty line, not an unreadable one.
+    if (!body) return;
     const nextKey = st && st.tag ? st.tag : '';
     if (nextKey !== key) {
       streams.set(key, { cur, seqState });
@@ -846,34 +1156,34 @@ export function parseLog(text, opts = {}) {
     if (!ev) {
       out.unparsedCount++;
       pushCapped(out.unparsed, { line: lineNo, text: raw }, UNPARSED_CAP);
-      continue;
+      return;
     }
     if (ev.k === 'note') {
       out.noteCount++;
       pushCapped(out.notes, { line: lineNo, text: raw }, NOTE_CAP);
       if (cur) cur.endLine = lineNo;
-      continue;
+      return;
     }
 
     if (ev.k === 'hdr') {
       ctx.inWinStats = false;
       openSession(ev.target, ev.ip, lineNo, true);
-      continue;
+      return;
     }
     if (ev.k === 'stats') {
       if (ev.fam === 'windows') ctx.inWinStats = true;
       if (!cur) openSession(ev.target || 'unknown', lastIp(ev.target), lineNo, false);
       cur.summary = cur.summary || {};
       cur.endLine = lineNo;
-      continue;
+      return;
     }
     if (ev.k === 'pkts' || ev.k === 'rtt') {
-      if (!cur) continue;
+      if (!cur) return;
       cur.summary = cur.summary || {};
       if (ev.k === 'pkts') Object.assign(cur.summary, { tx: ev.tx, rx: ev.rx, dupReported: ev.dup || 0 });
       else Object.assign(cur.summary, { min: ev.min, avg: ev.avg, max: ev.max, dev: ev.dev });
       cur.endLine = lineNo;
-      continue;
+      return;
     }
 
     // A sample. Lines before any header open an implicit session named after
@@ -888,69 +1198,92 @@ export function parseLog(text, opts = {}) {
     }
     if (st && st.abs != null) stamped.abs++; else if (st && st.clock != null) stamped.clock++;
 
-    if (status === 'dup' && ev.seq == null) { pushSample({ line: lineNo, ...ev, status: 'dup', ...stamp }); out.dups++; continue; }
-    if (status === 'dup') { pushSample({ line: lineNo, ...ev, seq: ev.seq + seqState.wrap, status: 'dup', ...stamp }); out.dups++; continue; }
+    if (status === 'dup' && ev.seq == null) { pushSample({ line: lineNo, ...ev, status: 'dup', ...stamp }); out.dups++; return; }
+    if (status === 'dup') { pushSample({ line: lineNo, ...ev, seq: ev.seq + seqState.wrap, status: 'dup', ...stamp }); out.dups++; return; }
 
     if (seqState) {
       if (ev.seq == null) {
         // BSD prints "Destination Host Unreachable" without a sequence number:
         // pin it to the next one so a later reply does not count it twice.
-        if (seqState.next == null) { pushSample({ line: lineNo, ...ev, seq: cur.n + 1, status, ...stamp }); continue; }
+        if (seqState.next == null) { pushSample({ line: lineNo, ...ev, seq: cur.n + 1, status, ...stamp }); return; }
         ev.seq = seqState.next - seqState.wrap;
       }
       placeSeq({ ...ev, status }, lineNo, stamp);
     } else {
       pushSample({ line: lineNo, ...ev, seq: cur.n + 1, status, ...stamp });
     }
-  }
+  });
   streams.set(key, { cur, seqState });
   for (const [k, sv] of streams) { key = k; cur = sv.cur; seqState = sv.seqState; closeSession(); }
-  out.sessions.sort((a, b) => a.id - b.id);
 
-  const real = out.samples.filter((s) => !s.inferred).length || 1;
+  let real = 0;
+  for (let i = 0; i < store.n; i++) if (!(store.flags[i] & F_INFERRED)) real++;
+  real = real || 1;
   out.basis = stamped.abs / real >= 0.5 ? 'absolute' : stamped.clock / real >= 0.5 ? 'clock' : 'estimated';
-  finish(out, opts);
+  seal(out, store, opts);
   return out;
 }
 
-/** Compare a session against the summary ping printed for it. */
-function checkSession(sess, out) {
-  const sm = sess.summary;
-  if (!sm || sm.tx == null) return null;
-  const mine = out.samples.filter((s) => s.sess === sess.id && s.status !== 'dup');
-  const tx = mine.length;
-  // ping.exe counts "Destination host unreachable" as received — it was a
-  // reply, just not from the target. This tool counts it as lost, so the
-  // comparison has to count it the Windows way to be fair.
-  const rx = mine.filter((s) => s.status === 'ok' || (s.winReply && out.format === 'windows')).length;
-  const rtts = mine.filter((s) => s.status === 'ok' && s.rtt != null).map((s) => s.rtt);
-  const issues = [];
-  if (tx !== sm.tx) issues.push({ what: 'sent', ping: sm.tx, ours: tx });
-  if (rx !== sm.rx) issues.push({ what: 'received', ping: sm.rx, ours: rx });
-  if (sm.min != null && rtts.length) {
-    let lo = Infinity, hi = -Infinity, sum = 0;
-    for (const v of rtts) { if (v < lo) lo = v; if (v > hi) hi = v; sum += v; }
-    const tol = (v) => Math.max(out.format === 'windows' ? 1 : 0.06, Math.abs(v) * 0.006);
-    if (Math.abs(lo - sm.min) > tol(sm.min)) issues.push({ what: 'min', ping: sm.min, ours: lo });
-    if (Math.abs(hi - sm.max) > tol(sm.max)) issues.push({ what: 'max', ping: sm.max, ours: hi });
-    const avg = sum / rtts.length;
-    if (Math.abs(avg - sm.avg) > tol(sm.avg) + 0.5) issues.push({ what: 'avg', ping: sm.avg, ours: avg });
-  }
-  const tail = mine.filter((s) => s.tail).length;
-  return { ok: !issues.length, issues, tail, dev: sm.dev ?? null };
+/** Order the samples by session in one pass (a counting sort): what the time
+    axis and the summary checks both need, without a filter per session. */
+function bySession(store, ns) {
+  const start = new Uint32Array(ns + 1);
+  for (let i = 0; i < store.n; i++) start[store.sess[i] + 1]++;
+  for (let s = 0; s < ns; s++) start[s + 1] += start[s];
+  const pos = start.slice(0, ns);
+  const order = new Uint32Array(store.n);
+  for (let i = 0; i < store.n; i++) order[pos[store.sess[i]]++] = i;
+  return { start, order };
 }
 
-/** Put every sample on one time axis, whatever the log gave us. */
-function finish(out, opts) {
+/** Compare every session against the summary ping printed for it — one pass
+    over the samples for all of them. */
+function checkAll(out, store) {
+  const ns = out.sessions.length;
+  const tx = new Uint32Array(ns), rx = new Uint32Array(ns), cnt = new Uint32Array(ns), tail = new Uint32Array(ns);
+  const lo = new Float64Array(ns).fill(Infinity), hi = new Float64Array(ns).fill(-Infinity), sum = new Float64Array(ns);
+  const win = out.format === 'windows';
+  for (let i = 0; i < store.n; i++) {
+    const st = store.status[i];
+    if (st === ST.dup) continue;
+    const s = store.sess[i];
+    tx[s]++;
+    // ping.exe counts "Destination host unreachable" as received — it was a
+    // reply, just not from the target. This tool counts it as lost, so the
+    // comparison has to count it the Windows way to be fair.
+    if (st === ST.ok || (win && (store.flags[i] & F_WINREPLY))) rx[s]++;
+    const v = store.rtt[i];
+    if (st === ST.ok && v === v) { cnt[s]++; sum[s] += v; if (v < lo[s]) lo[s] = v; if (v > hi[s]) hi[s] = v; }
+    if (store.flags[i] & F_TAIL) tail[s]++;
+  }
+  const tol = (v) => Math.max(win ? 1 : 0.06, Math.abs(v) * 0.006);
+  for (const sess of out.sessions) {
+    const sm = sess.summary;
+    if (!sm || sm.tx == null) continue;
+    const s = sess.id;
+    const issues = [];
+    if (tx[s] !== sm.tx) issues.push({ what: 'sent', ping: sm.tx, ours: tx[s] });
+    if (rx[s] !== sm.rx) issues.push({ what: 'received', ping: sm.rx, ours: rx[s] });
+    if (sm.min != null && cnt[s]) {
+      if (Math.abs(lo[s] - sm.min) > tol(sm.min)) issues.push({ what: 'min', ping: sm.min, ours: lo[s] });
+      if (Math.abs(hi[s] - sm.max) > tol(sm.max)) issues.push({ what: 'max', ping: sm.max, ours: hi[s] });
+      const avg = sum[s] / cnt[s];
+      if (Math.abs(avg - sm.avg) > tol(sm.avg) + 0.5) issues.push({ what: 'avg', ping: sm.avg, ours: avg });
+    }
+    sess.check = { ok: !issues.length, issues, tail: tail[s], dev: sm.dev ?? null };
+  }
+}
+
+/** Put every sample on one time axis, whatever the log gave us, check the
+    summaries, and hand the columns over. Linear in the number of samples. */
+function seal(out, store, opts) {
   const interval = opts.interval || out.interval || 1000;
   out.interval = interval;
-  const bySess = new Map();
-  for (const s of out.samples) {
-    if (!bySess.has(s.sess)) bySess.set(s.sess, []);
-    bySess.get(s.sess).push(s);
-  }
+  const ns = out.sessions.length;
+  const { start, order } = bySession(store, ns);
+  const { at, seq, clock, status } = store;
 
-  if (out.basis === 'clock' && out.format !== 'csv') for (const s of out.samples) { s.at = s.clock; }
+  if (out.basis === 'clock' && out.format !== 'csv') at.set(clock.subarray(0, store.n));
 
   if (out.basis === 'estimated') {
     // No clock: lay the sessions end to end, one interval per probe. Sequence
@@ -959,47 +1292,58 @@ function finish(out, opts) {
     // Interleaved streams ran at the same time, so each has its own cursor.
     const cursors = new Map();
     for (const sess of out.sessions) {
-      let cursor = cursors.get(sess.stream || '') || 0;
-      const list = bySess.get(sess.id) || [];
-      if (out.format === 'csv') { for (const s of list) if (s.at == null) s.at = cursor; continue; }
-      const seqd = list.length && list.every((s) => s.seq != null) && FAMILY[out.format] !== 'windows';
-      let first = Infinity;
-      if (seqd) for (const s of list) if (s.seq < first) first = s.seq;
-      let t = cursor;
-      for (const s of list) {
-        if (seqd) s.at = cursor + (s.seq - first) * interval;
+      const cursor = cursors.get(sess.stream || '') || 0;
+      const a = start[sess.id], b = start[sess.id + 1];
+      if (out.format === 'csv') { for (let q = a; q < b; q++) if (at[order[q]] !== at[order[q]]) at[order[q]] = cursor; continue; }
+      let seqd = b > a && FAMILY[out.format] !== 'windows', first = Infinity;
+      for (let q = a; q < b && seqd; q++) { const v = seq[order[q]]; if (v !== v) seqd = false; else if (v < first) first = v; }
+      let t = cursor, last = cursor;
+      for (let q = a; q < b; q++) {
+        const i = order[q];
+        if (seqd) at[i] = cursor + (seq[i] - first) * interval;
         else {
-          s.at = t;
-          if (s.status !== 'dup') t += s.status === 'timeout' && out.format === 'windows' ? Math.max(interval, WIN_TIMEOUT_MS) : interval;
+          at[i] = t;
+          if (status[i] !== ST.dup) t += status[i] === ST.timeout && out.format === 'windows' ? Math.max(interval, WIN_TIMEOUT_MS) : interval;
         }
+        if (at[i] > last) last = at[i];
       }
-      const last = list.reduce((a, s) => Math.max(a, s.at), cursor);
       cursors.set(sess.stream || '', last + interval);
     }
   } else {
     // A clock exists, but inferred samples (and the odd unstamped line) have
-    // none: interpolate between the stamped neighbours by sequence number.
-    for (const list of bySess.values()) {
-      const known = list.filter((s) => s.at != null);
-      if (!known.length) continue;
-      for (let i = 0; i < list.length; i++) {
-        const s = list[i];
-        if (s.at != null) continue;
-        let a = i - 1; while (a >= 0 && list[a].at == null) a--;
-        let b = i + 1; while (b < list.length && list[b].at == null) b++;
-        const A = a >= 0 ? list[a] : null, B = b < list.length ? list[b] : null;
-        if (A && B && A.seq != null && B.seq != null && s.seq != null && B.seq !== A.seq) {
-          s.at = A.at + ((s.seq - A.seq) / (B.seq - A.seq)) * (B.at - A.at);
-        } else if (A) s.at = A.at + (s.seq != null && A.seq != null ? (s.seq - A.seq) : (i - a)) * interval;
-        else if (B) s.at = B.at - (s.seq != null && B.seq != null ? (B.seq - s.seq) : (b - i)) * interval;
+    // none: interpolate each run of them between its stamped neighbours, by
+    // sequence number where both ends have one. One pass per session — the
+    // first version rescanned the run for every sample in it, which is
+    // quadratic in the length of an outage.
+    for (let s = 0; s < ns; s++) {
+      const a = start[s], b = start[s + 1];
+      let known = -1;                         // position (in order) of the last stamped sample
+      const fill = (ka, kb) => {
+        const A = ka >= a ? order[ka] : -1, B = kb < b ? order[kb] : -1;
+        for (let q = ka + 1; q < kb; q++) {
+          const i = order[q];
+          const sA = A >= 0 ? seq[A] : NaN, sB = B >= 0 ? seq[B] : NaN, si = seq[i];
+          if (A >= 0 && B >= 0 && sA === sA && sB === sB && si === si && sB !== sA) at[i] = at[A] + ((si - sA) / (sB - sA)) * (at[B] - at[A]);
+          else if (A >= 0) at[i] = at[A] + (si === si && sA === sA ? si - sA : q - ka) * interval;
+          else if (B >= 0) at[i] = at[B] - (si === si && sB === sB ? sB - si : kb - q) * interval;
+        }
+      };
+      for (let q = a; q < b; q++) {
+        if (at[order[q]] !== at[order[q]]) continue;
+        if (q - 1 > known && (known >= a || q > a)) fill(known >= a ? known : a - 1, q);
+        known = q;
       }
+      if (known >= a && known < b - 1) fill(known, b);
     }
-    for (const s of out.samples) if (s.at == null) s.at = 0;
+    for (let i = 0; i < store.n; i++) if (at[i] !== at[i]) at[i] = 0;
   }
 
-  for (const s of out.samples) delete s.clock;
+  checkAll(out, store);
   for (const sess of out.sessions) {
-    const t = out.targets[sess.tgt];
-    if (t && !t.ip && sess.ip) t.ip = sess.ip;
+    const tg = out.targets[sess.tgt];
+    if (tg && !tg.ip && sess.ip) tg.ip = sess.ip;
   }
+  out.n = store.n;
+  out.cols = store.columns();
+  out.strings = store.strings;
 }

@@ -1,10 +1,10 @@
 /* analyze.js — the Log file mode: read a saved ping log and analyze it.
 
-   The file never leaves the tab. It is read with File.arrayBuffer(), decoded
-   and parsed in a worker (parse-worker.js), and everything after that — the
-   statistics, the charts, the table — is built from the parsed samples in
-   memory, using the same stats.js the live view uses, so a reading means the
-   same thing in both modes.
+   The file never leaves the tab. A worker (parse-worker.js) reads it as a
+   stream, decodes and parses it, and hands back the samples as typed-array
+   columns; everything after that — the statistics, the charts, the table —
+   is built from those columns, using the same stats.js the live view uses,
+   so a reading means the same thing in both modes.
 
    Filters come in two kinds, on purpose:
      the time range (dragged on the chart) and the target filter scope the
@@ -13,13 +13,15 @@
      Applying a status filter to the statistics would be meaningless: "only
      timeouts" would make every target read 100 % loss.
 
-   The table is virtualized. A week of `ping -t` is 600 000 rows, and the DOM
-   only ever holds the few dozen in view. */
+   The table is virtualized. A week of `ping -t` is 600 000 rows, a long
+   PowerShell capture several million, and the DOM only ever holds the few
+   dozen in view. */
 
-import { Series, combine, verdict, extremes, lossEvents } from './stats.js';
+import { Series, combine, verdict } from './stats.js';
 import { drawTimeChart, drawHistogram, drawLossBars, drawHeat, sparkline, seriesColor } from './viz.js';
 import { exportCSV, exportSheet } from './export.js';
 import { reportHtml, openReport } from './report.js';
+import { createEngine, sampleAt, STATUS, F_INFERRED, F_COLD } from './parse.js';
 
 const $ = (id) => document.getElementById(id);
 const t = (k) => (window.t ? window.t(k) : k);
@@ -36,12 +38,13 @@ const LANG_NAMES = {
 const STATUS_LABEL = {
   ok: 'OK', timeout: 'TIMEOUT', unreachable: 'UNREACHABLE', ttl: 'TTL EXCEEDED', error: 'ERROR', dup: 'DUP',
 };
+const OK = 0, DUP = 5;           // indices into STATUS, as stored in the status column
 
 const A = {
   active: false,
-  res: null,             // parse result
-  text: null,            // decoded text, kept for re-parsing and the raw-line tooltips
-  lines: null,           // split lazily
+  res: null,             // parse result: metadata plus typed-array sample columns
+  src: null,             // the Source holding this log's text (raw lines, re-parse)
+  rawCache: new Map(),   // line number -> text, for the row tooltips
   file: null,            // { name, size, lastModified }
   opts: { format: '', interval: 1000, dateOrder: '' },
   tab: 'time',
@@ -76,69 +79,77 @@ function restore() {
   } catch { /* ignore */ }
 }
 
-/* ---- the parse, off the main thread --------------------------------------- */
+/* ---- the parse, off the main thread ----------------------------------------
 
-let worker = null;
-let reqId = 0;
-const pending = new Map();
+   Each load gets its own Source: a worker that reads, decodes and parses the
+   file and then keeps the text, answering for individual lines (the row
+   tooltips) and re-parsing after an override without reading the file again.
+   The page holds only the sample columns. A new load runs in a new Source and
+   replaces the current one only once it has produced a usable log, so a
+   cancelled or failed load leaves the log on screen — and its text — intact.
+   Where a worker cannot start, the Source runs the same engine on the page. */
 
 class Cancelled extends Error {}
 
-function getWorker() {
-  if (worker === false) return null;
-  if (worker) return worker;
-  try {
-    worker = new Worker(new URL('./parse-worker.js', import.meta.url), { type: 'module' });
-  } catch {
-    worker = false;
-    return null;
+class Source {
+  constructor() {
+    this.pending = new Map();
+    this.id = 0;
+    this.engine = null;
+    this.w = null;
+    try {
+      this.w = new Worker(new URL('./parse-worker.js', import.meta.url), { type: 'module' });
+    } catch {
+      this.w = null;
+    }
+    if (!this.w) return;
+    this.w.onmessage = (e) => {
+      const p = this.pending.get(e.data.id);
+      if (!p) return;
+      if (e.data.progress) { if (p.onProgress) p.onProgress(e.data.progress); return; }
+      this.pending.delete(e.data.id);
+      if (e.data.ok) p.resolve(e.data); else p.reject(new Error(e.data.error));
+    };
+    // A module worker that cannot load (an old browser, file://) fails here,
+    // not in the constructor. Whatever was waiting re-runs on the page.
+    this.w.onerror = (e) => {
+      e.preventDefault();
+      this.w.terminate();
+      this.w = null;
+      const waiting = [...this.pending.values()];
+      this.pending.clear();
+      waiting.forEach((p) => this.local(p.msg, p.onProgress).then(p.resolve, p.reject));
+    };
   }
-  worker.onmessage = (e) => {
-    const p = pending.get(e.data.id);
-    if (!p) return;
-    if (e.data.progress) { if (p.onProgress) p.onProgress(e.data.progress); return; }
-    pending.delete(e.data.id);
-    if (e.data.ok) p.resolve(e.data); else p.reject(new Error(e.data.error));
-  };
-  // A module worker that cannot load (an old browser, file://) fails here,
-  // not in the constructor. Everything waiting is re-run on the main thread.
-  worker.onerror = (e) => {
-    e.preventDefault();
-    worker.terminate();
-    worker = false;
-    const waiting = [...pending.values()];
-    pending.clear();
-    waiting.forEach((p) => mainThread(p.payload, p.onProgress).then(p.resolve, p.reject));
-  };
-  return worker;
-}
 
-async function mainThread(payload, onProgress) {
-  const { decode, parseLog } = await import('./parse.js');
-  let text = payload.text, encoding = null;
-  if (text == null) ({ text, encoding } = decode(payload.buf));
-  const res = parseLog(text, { ...payload.opts, onProgress });
-  res.encoding = encoding || payload.opts.encoding || null;
-  return { res, text: payload.text == null ? text : null };
-}
+  async local(msg, onProgress) {
+    if (!this.engine) this.engine = createEngine();
+    const eng = this.engine;
+    if (msg.op === 'lines') return { lines: eng.lines(msg.nums) };
+    if (msg.op === 'file') await eng.loadFile(msg.file, onProgress);
+    else if (msg.op === 'text') eng.loadText(msg.text);
+    return { res: eng.parse(msg.opts, onProgress) };
+  }
 
-function runParse(payload, onProgress) {
-  const w = getWorker();
-  if (!w) return mainThread(payload, onProgress);
-  return new Promise((resolve, reject) => {
-    const id = ++reqId;
-    pending.set(id, { resolve, reject, payload, onProgress });
-    w.postMessage({ id, ...payload });     // copied, not transferred: the fallback may need it
-  });
-}
+  call(msg, onProgress) {
+    if (!this.w) return this.local(msg, onProgress);
+    return new Promise((resolve, reject) => {
+      const id = ++this.id;
+      this.pending.set(id, { resolve, reject, msg, onProgress });
+      this.w.postMessage({ id, ...msg });
+    });
+  }
 
-/** Stop a parse in flight. A worker cannot be interrupted mid-loop, so it is
-    thrown away; the next parse starts a fresh one. */
-function cancelParse() {
-  if (worker) { worker.terminate(); worker = null; }
-  const waiting = [...pending.values()];
-  pending.clear();
-  waiting.forEach((p) => p.reject(new Cancelled()));
+  lines(nums) { return this.call({ op: 'lines', nums }).then((r) => r.lines); }
+
+  close() {
+    if (this.w) this.w.terminate();
+    this.w = null;
+    this.engine = null;
+    const waiting = [...this.pending.values()];
+    this.pending.clear();
+    waiting.forEach((p) => p.reject(new Cancelled()));
+  }
 }
 
 function parseOpts(file = A.file, fresh = false) {
@@ -156,15 +167,15 @@ const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1
 
 /* ---- progress ----------------------------------------------------------------
 
-   Four steps, each with its share of the bar: reading the file, decoding it,
-   parsing it (by far the longest, and the one with a real line count), and
-   drawing the result on the main thread. The card appears only if the work
-   outlasts a blink — a 2 kB log should not flash a dialog. */
+   Three steps, each with its share of the bar: reading the file (decoded as it
+   streams, so it has a real byte count), parsing it (with a real line count),
+   and drawing the result on the main thread. The card appears only if the
+   work outlasts a blink — a 2 kB log should not flash a dialog. */
 
-const STEPS = ['read', 'decode', 'parse', 'draw'];
-const WEIGHT = { read: 0.2, decode: 0.08, parse: 0.62, draw: 0.1 };
+const STEPS = ['read', 'parse', 'draw'];
+const WEIGHT = { read: 0.35, parse: 0.55, draw: 0.1 };
 let busyTimer = null;
-let job = null;          // { cancelled } for the load in flight
+let job = null;          // { cancelled, src } for the load in flight
 
 function busyStart(name, size) {
   A.busy = true;
@@ -200,8 +211,9 @@ function step(name, frac, msg, count) {
 }
 
 function onParseProgress(p) {
-  if (p.phase === 'decode') step('decode', null, t('Decoding…'));
-  else if (p.phase === 'parse') {
+  if (p.phase === 'read') {
+    step('read', p.total ? p.done / p.total : null, `${t('Reading')} ${fmtSize(p.done)} / ${fmtSize(p.total)}`, '');
+  } else if (p.phase === 'parse') {
     step('parse', p.total ? p.done / p.total : null, t('Parsing…'),
       `${p.done.toLocaleString()} / ${p.total.toLocaleString()} ${t('lines')} · ${p.rows.toLocaleString()} ${t('samples')}`);
   } else if (p.phase === 'send') {
@@ -212,40 +224,24 @@ function onParseProgress(p) {
 /** Let the card paint before the main thread goes busy drawing. */
 const nextPaint = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-/** Read a file in chunks so the first step has a real byte count. */
-async function readFile(file, mine) {
-  if (!file.stream) return file.arrayBuffer();
-  const reader = file.stream().getReader();
-  const out = new Uint8Array(file.size);
-  let off = 0;
-  for (;;) {
-    if (mine.cancelled) { reader.cancel(); throw new Cancelled(); }
-    const { done, value } = await reader.read();
-    if (done) break;
-    // The file grew while being read: start over the simple way.
-    if (off + value.length > out.length) { reader.cancel(); return file.arrayBuffer(); }
-    out.set(value, off);
-    off += value.length;
-    step('read', file.size ? off / file.size : null, `${t('Reading')} ${fmtSize(off)} / ${fmtSize(file.size)}`);
-  }
-  return off === out.length ? out.buffer : out.slice(0, off).buffer;
-}
 /* A new file replaces the current log only once it has parsed into something:
    a wrong file dropped on a good analysis leaves the analysis where it was. */
-async function adopt(out, file, text) {
-  if (!usable(out.res)) { refuse(out.res); return; }
-  step('draw', null, t('Building charts and table…'), `${out.res.samples.length.toLocaleString()} ${t('samples')}`);
+async function adopt(res, file, src) {
+  if (!usable(res)) { refuse(res); src.close(); return; }
+  step('draw', null, t('Building charts and table…'), `${res.n.toLocaleString()} ${t('samples')}`);
   await nextPaint();
+  if (A.src && A.src !== src) A.src.close();
+  A.src = src;
   A.file = file;
-  A.text = text; A.lines = null;
+  A.rawCache.clear();
   A.opts.format = ''; A.opts.dateOrder = '';
-  accept(out.res);
+  accept(res);
 }
 
 /** One load at a time: a second drop cancels the first. */
 async function run(name, size, work) {
-  if (job) { job.cancelled = true; cancelParse(); }
-  const mine = { cancelled: false };
+  if (job) cancelJob();
+  const mine = { cancelled: false, src: null };
   job = mine;
   busyStart(name, size);
   try {
@@ -257,14 +253,27 @@ async function run(name, size, work) {
   }
 }
 
+/** A fresh load's worker is thrown away — a worker cannot be interrupted
+    mid-parse. A re-parse runs in the current log's worker, which must
+    survive, so cancelling one only stops waiting for it. */
+function cancelJob() {
+  if (!job) return;
+  job.cancelled = true;
+  if (job.src && job.src !== A.src) job.src.close();
+  if (job.reject) job.reject(new Cancelled());
+}
+
+function waitable(mine, promise) {
+  return new Promise((resolve, reject) => { mine.reject = reject; promise.then(resolve, reject); });
+}
+
 export function loadFile(file) {
   if (!file) return Promise.resolve();
   return run(file.name, file.size, async (mine) => {
-    const buf = await readFile(file, mine);
     const meta = { name: file.name, size: file.size, lastModified: file.lastModified };
-    step('decode', null, t('Decoding…'));
-    const out = await runParse({ buf, opts: parseOpts(meta, true) }, onParseProgress);
-    if (!mine.cancelled) await adopt(out, meta, out.text);
+    mine.src = new Source();
+    const out = await waitable(mine, mine.src.call({ op: 'file', file, opts: parseOpts(meta, true) }, onParseProgress));
+    if (!mine.cancelled) await adopt(out.res, meta, mine.src);
   });
 }
 
@@ -272,16 +281,18 @@ function loadText(text, name) {
   const meta = { name, size: new Blob([text]).size, lastModified: Date.now() };
   return run(name, meta.size, async (mine) => {
     step('parse', 0, t('Parsing…'));
-    const out = await runParse({ text, opts: parseOpts(meta, true) }, onParseProgress);
-    if (!mine.cancelled) await adopt(out, meta, text);
+    mine.src = new Source();
+    const out = await waitable(mine, mine.src.call({ op: 'text', text, opts: parseOpts(meta, true) }, onParseProgress));
+    if (!mine.cancelled) await adopt(out.res, meta, mine.src);
   });
 }
 
 function reparse() {
-  if (A.text == null) return Promise.resolve();
+  if (!A.src) return Promise.resolve();
   return run(A.file ? A.file.name : '', A.file ? A.file.size : null, async (mine) => {
     step('parse', 0, t('Parsing…'));
-    const out = await runParse({ text: A.text, opts: parseOpts() }, onParseProgress);
+    mine.src = A.src;
+    const out = await waitable(mine, A.src.call({ op: 'reparse', opts: parseOpts() }, onParseProgress));
     if (mine.cancelled) return;
     step('draw', null, t('Building charts and table…'));
     await nextPaint();
@@ -289,7 +300,7 @@ function reparse() {
   });
 }
 
-const usable = (res) => !!(res.format && res.samples.length);
+const usable = (res) => !!(res.format && res.n);
 
 function refuse(res) {
   notify(res.format
@@ -303,10 +314,6 @@ function refuse(res) {
 function accept(res, keepFilters = false) {
   if (!usable(res)) notify(t('Nothing in this file matches that format — showing it anyway, so you can switch back.'), 'warn');
   else notify('');
-  for (const s of res.samples) {
-    s.ok = s.status === 'ok';
-    s.timedOut = s.status === 'timeout';
-  }
   res.targets.forEach((tg, i) => { tg.color = seriesColor(i); });
   A.res = res;
   if (!keepFilters) {
@@ -318,11 +325,16 @@ function accept(res, keepFilters = false) {
   render();
 }
 
-/* ---- deriving the view ---------------------------------------------------- */
+/* ---- deriving the view ----------------------------------------------------
+
+   Everything below reads the columns directly (res.cols.at[k], …). A log can
+   hold millions of samples, and an object per sample is exactly what made the
+   first version fall over at that size. */
 
 function extent(res) {
+  const at = res.cols ? res.cols.at : [];
   let lo = Infinity, hi = -Infinity;
-  for (const s of res.samples) { if (s.at < lo) lo = s.at; if (s.at > hi) hi = s.at; }
+  for (let i = 0; i < res.n; i++) { const v = at[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
   if (lo === Infinity) return [0, 1];
   if (hi - lo < 1000) hi = lo + 1000;
   return [lo, hi];
@@ -333,53 +345,74 @@ function derive() {
   if (!res) { A.view = null; return; }
   const full = extent(res);
   const [x0, x1] = A.range || full;
-  const inRange = (s) => s.at >= x0 && s.at <= x1;
+  const n = res.n, c = res.cols;
+  const at = c ? c.at : null, tgtC = c ? c.tgt : null, st = c ? c.status : null, rtt = c ? c.rtt : null, fl = c ? c.flags : null;
 
-  const targets = res.targets.map((tg, i) => ({
-    i, label: tg.label, ip: tg.ip, color: tg.color, list: [], series: new Series(tg.label, Infinity),
-  }));
-  for (let k = 0; k < res.samples.length; k++) {
-    const s = res.samples[k];
-    if (!inRange(s)) continue;
-    targets[s.tgt].list.push(k);
-  }
+  const T = res.targets.length;
+  const counts = new Uint32Array(T);
+  for (let k = 0; k < n; k++) if (at[k] >= x0 && at[k] <= x1) counts[tgtC[k]]++;
+  const lists = Array.from({ length: T }, (_, i) => new Uint32Array(counts[i]));
+  const fillPos = new Uint32Array(T);
+  for (let k = 0; k < n; k++) if (at[k] >= x0 && at[k] <= x1) lists[tgtC[k]][fillPos[tgtC[k]]++] = k;
+
+  const targets = res.targets.map((tg, i) => ({ i, label: tg.label, ip: tg.ip, color: tg.color, list: lists[i], series: null }));
   const visible = targets.filter((x) => (A.fTarget === '' || String(x.i) === A.fTarget) && x.list.length);
   for (const tg of visible) {
-    tg.list.sort((a, b) => res.samples[a].at - res.samples[b].at || a - b);
-    for (const k of tg.list) {
-      const s = res.samples[k];
-      if (s.status !== 'dup') tg.series.push(s);
+    let L = tg.list, sorted = true;
+    for (let q = 1; q < L.length; q++) if (at[L[q]] < at[L[q - 1]]) { sorted = false; break; }
+    if (!sorted) L = tg.list = L.slice().sort((a, b) => at[a] - at[b] || a - b);
+    // The statistics module's Series, filled from the columns in one pass
+    // rather than a push per sample.
+    let ok = 0, sent = 0, lost = 0;
+    for (let q = 0; q < L.length; q++) {
+      const k = L[q], s = st[k];
+      if (s === DUP) continue;
+      sent++;
+      if (s !== OK) lost++;
+      else if (rtt[k] === rtt[k] && !(fl[k] & F_COLD)) ok++;
     }
+    const r = new Float64Array(ok);
+    let o = 0;
+    for (let q = 0; q < L.length; q++) {
+      const k = L[q];
+      if (st[k] === OK && rtt[k] === rtt[k] && !(fl[k] & F_COLD)) r[o++] = rtt[k];
+    }
+    const series = new Series(tg.label, Infinity);
+    series.rtts = r; series.sent = sent; series.lost = lost;
+    tg.series = series;
   }
 
   // Table rows: the analysis scope, then the table-only filters.
   let near = null;
   if (A.fAround) {
-    near = new Set();
+    near = new Uint8Array(n);
     const N = Math.max(0, A.fAroundN | 0);
     for (const tg of visible) {
       const L = tg.list;
       for (let p = 0; p < L.length; p++) {
-        const st = res.samples[L[p]].status;
-        if (st === 'ok' || st === 'dup') continue;
-        for (let q = Math.max(0, p - N); q <= Math.min(L.length - 1, p + N); q++) near.add(L[q]);
+        const s = st[L[p]];
+        if (s === OK || s === DUP) continue;
+        for (let q = Math.max(0, p - N); q <= Math.min(L.length - 1, p + N); q++) near[L[q]] = 1;
       }
     }
   }
-  const vis = new Set(visible.map((x) => x.i));
+  const vis = new Uint8Array(T);
+  for (const x of visible) vis[x.i] = 1;
   const rttMin = A.fRtt === '' ? null : Number(A.fRtt);
+  const useRtt = rttMin != null && !Number.isNaN(rttMin);
+  const want = A.fStatus === 'all' || A.fStatus === 'replies' || A.fStatus === 'lost' ? -1 : STATUS.indexOf(A.fStatus);
   const rows = [];
-  for (let k = 0; k < res.samples.length; k++) {
-    const s = res.samples[k];
-    if (!vis.has(s.tgt) || !inRange(s)) continue;
-    if (A.fStatus === 'replies' && s.status !== 'ok') continue;
-    if (A.fStatus === 'lost' && (s.status === 'ok' || s.status === 'dup')) continue;
-    if (!['all', 'replies', 'lost'].includes(A.fStatus) && s.status !== A.fStatus) continue;
-    if (rttMin != null && !Number.isNaN(rttMin) && !(s.rtt != null && s.rtt >= rttMin)) continue;
-    if (near && !near.has(k)) continue;
+  for (let k = 0; k < n; k++) {
+    if (!vis[tgtC[k]] || !(at[k] >= x0 && at[k] <= x1)) continue;
+    const s = st[k];
+    if (A.fStatus === 'replies' && s !== OK) continue;
+    if (A.fStatus === 'lost' && (s === OK || s === DUP)) continue;
+    if (want >= 0 && s !== want) continue;
+    if (useRtt && !(rtt[k] >= rttMin)) continue;
+    if (near && !near[k]) continue;
     rows.push(k);
   }
-  A.view = { targets, visible, rows, x0, x1, full };
+  A.view = { targets, visible, rows, x0, x1, full, pool: null };
 }
 
 /* ---- time formatting by basis ----------------------------------------------- */
@@ -565,7 +598,7 @@ function renderTiles() {
   $('aJitter').textContent = ms(sum.jitter);
   $('aLoss').textContent = sum.sent ? `${sum.loss.toFixed(sum.loss && sum.loss < 0.1 ? 2 : 1)} %` : '—';
   $('aLossSub').textContent = sum.sent ? `${sum.lost} ${t('of')} ${sum.sent}` : t('none sent');
-  $('aSent').textContent = String(sum.sent);
+  $('aSent').textContent = sum.sent.toLocaleString();
   $('aSpan').textContent = spanText(v.x0, v.x1);
   $('aSpanSub').textContent = A.range ? t('selected range') : (A.res.basis === 'estimated' ? t('estimated') : t('whole log'));
   const tile = $('aTileLoss');
@@ -576,19 +609,25 @@ function renderTiles() {
 
 /** Who answered, and whether the route changed: both visible in the samples. */
 function targetFacts(tg) {
-  const res = A.res;
-  const from = new Map();
+  const res = A.res, c = res.cols;
+  const from = new Map();               // interned responder id -> count
   const ttls = [];
-  let prevTtl = null, ttlChanges = 0;
-  for (const k of tg.list) {
-    const s = res.samples[k];
-    if (s.from) from.set(s.from, (from.get(s.from) || 0) + 1);
-    if (s.status === 'ok' && s.ttl != null) {
-      if (prevTtl != null && s.ttl !== prevTtl) { ttlChanges++; if (ttls.length < 6) ttls.push(`${prevTtl}→${s.ttl}`); }
-      prevTtl = s.ttl;
+  let prevTtl = -1, ttlChanges = 0;
+  const L = tg.list;
+  for (let q = 0; q < L.length; q++) {
+    const k = L[q];
+    const f = c.from[k];
+    if (f) from.set(f, (from.get(f) || 0) + 1);
+    const ttl = c.ttl[k];
+    if (c.status[k] === OK && ttl >= 0) {
+      if (prevTtl >= 0 && ttl !== prevTtl) { ttlChanges++; if (ttls.length < 6) ttls.push(`${prevTtl}→${ttl}`); }
+      prevTtl = ttl;
     }
   }
-  return { from: [...from.entries()].sort((a, b) => b[1] - a[1]), ttlChanges, ttls };
+  return {
+    from: [...from.entries()].sort((a, b) => b[1] - a[1]).map(([id, n]) => [res.strings[id], n]),
+    ttlChanges, ttls,
+  };
 }
 
 function renderCards() {
@@ -620,7 +659,7 @@ function renderCards() {
     for (let b = 0; b < B; b++) {
       const a = Math.floor((b * L.length) / B), e = Math.floor(((b + 1) * L.length) / B);
       let sum = 0, n = 0;
-      for (let q = a; q < e; q++) { const x = res.samples[L[q]]; if (x.status === 'ok' && x.rtt != null) { sum += x.rtt; n++; } }
+      for (let q = a; q < e; q++) { const k = L[q], r = res.cols.rtt[k]; if (res.cols.status[k] === OK && r === r) { sum += r; n++; } }
       pts.push(n ? sum / n : null);
     }
     const others = facts.from.filter(([addr]) => addr && addr !== tg.ip && !addr.includes(`(${tg.ip})`) && !addr.endsWith(tg.ip));
@@ -701,14 +740,23 @@ function drawChartNow() {
   hideTip();
   if (A.tab === 'time' || A.tab === 'ttl') {
     const ttl = A.tab === 'ttl';
+    const c = res.cols;
     const series = v.visible.map((tg) => {
-      const T = [], V = [];
-      for (const k of tg.list) {
-        const s = res.samples[k];
-        if (s.status === 'dup') continue;
-        if (ttl) { if (s.status === 'ok' && s.ttl != null) { T.push(s.at); V.push(s.ttl); } continue; }
-        T.push(s.at);
-        V.push(s.status === 'ok' && s.rtt != null ? s.rtt : NaN);
+      const L = tg.list;
+      let m = 0;
+      for (let q = 0; q < L.length; q++) {
+        const k = L[q];
+        if (c.status[k] === DUP) continue;
+        if (!ttl || (c.status[k] === OK && c.ttl[k] >= 0)) m++;
+      }
+      const T = new Float64Array(m), V = new Float64Array(m);
+      let o = 0;
+      for (let q = 0; q < L.length; q++) {
+        const k = L[q], s = c.status[k];
+        if (s === DUP) continue;
+        if (ttl) { if (s === OK && c.ttl[k] >= 0) { T[o] = c.at[k]; V[o++] = c.ttl[k]; } continue; }
+        T[o] = c.at[k];
+        V[o++] = s === OK ? c.rtt[k] : NaN;
       }
       return { label: tg.label, color: tg.color, t: T, v: V };
     });
@@ -725,7 +773,17 @@ function drawChartNow() {
         : t('Red rules mark lost probes. Drag across the chart to zoom into a time range.'));
   } else if (A.tab === 'dist') {
     const series = v.visible.map((tg) => ({ label: tg.label, color: tg.color, values: tg.series.rtts }));
-    A.geom = drawHistogram(canvas, series, { empty });
+    // One sorted pool per view: re-sorting millions of values on every resize
+    // is what made this tab slow on a big log.
+    if (!v.pool) {
+      let m = 0;
+      for (const s of series) m += s.values.length;
+      v.pool = new Float64Array(m);
+      let o = 0;
+      for (const s of series) { v.pool.set(s.values, o); o += s.values.length; }
+      v.pool.sort();
+    }
+    A.geom = drawHistogram(canvas, series, { empty, sorted: v.pool });
     A.geom && (A.geom.kind = 'dist');
     $('aChartNote').textContent = t('Share of each target\'s replies per round-trip bin. The last bin collects everything above the 99th percentile.');
   } else if (A.tab === 'loss') {
@@ -733,13 +791,17 @@ function drawChartNow() {
     const start = Math.floor(v.x0 / b) * b;
     const n = Math.max(1, Math.ceil((v.x1 - start) / b) + 1);
     const buckets = Array.from({ length: n }, (_, i) => ({ t0: start + i * b, t1: start + (i + 1) * b, sent: 0, lost: 0 }));
-    for (const tg of v.visible) for (const k of tg.list) {
-      const s = res.samples[k];
-      if (s.status === 'dup') continue;
-      const bi = Math.floor((s.at - start) / b);
-      if (bi < 0 || bi >= n) continue;
-      buckets[bi].sent++;
-      if (s.status !== 'ok') buckets[bi].lost++;
+    const c = res.cols;
+    for (const tg of v.visible) {
+      const L = tg.list;
+      for (let q = 0; q < L.length; q++) {
+        const k = L[q], s = c.status[k];
+        if (s === DUP) continue;
+        const bi = Math.floor((c.at[k] - start) / b);
+        if (bi < 0 || bi >= n) continue;
+        buckets[bi].sent++;
+        if (s !== OK) buckets[bi].lost++;
+      }
     }
     A.geom = drawLossBars(canvas, buckets, { x0: v.x0, x1: v.x1, fmtX, empty });
     A.geom && (A.geom.kind = 'loss');
@@ -750,15 +812,17 @@ function drawChartNow() {
       : (at) => new Date(at).getHours();
     const rows = v.visible.map((tg) => {
       const cells = Array.from({ length: 24 }, () => ({ n: 0, lost: 0, rtts: [] }));
-      for (const k of tg.list) {
-        const s = res.samples[k];
-        if (s.status === 'dup') continue;
-        const c = cells[hourOf(s.at)];
+      const col = res.cols, L = tg.list;
+      for (let q = 0; q < L.length; q++) {
+        const k = L[q], s = col.status[k];
+        if (s === DUP) continue;
+        const c = cells[hourOf(col.at[k])];
         c.n++;
-        if (s.status === 'ok' && s.rtt != null) c.rtts.push(s.rtt); else if (s.status !== 'ok') c.lost++;
+        const r = col.rtt[k];
+        if (s === OK && r === r) c.rtts.push(r); else if (s !== OK) c.lost++;
       }
       for (const c of cells) {
-        c.rtts.sort((a, b) => a - b);
+        c.rtts = Float64Array.from(c.rtts).sort();
         c.p50 = c.rtts.length ? c.rtts[Math.ceil(c.rtts.length / 2) - 1] : null;
         c.p95 = c.rtts.length ? c.rtts[Math.min(c.rtts.length - 1, Math.ceil(c.rtts.length * 0.95) - 1)] : null;
         delete c.rtts;
@@ -887,17 +951,38 @@ function bindChart() {
 
 /* ---- the table -------------------------------------------------------------- */
 
+/* Browsers cap an element's height (Firefox near 17.9 million px), and six
+   million 26-px rows would be 156 million. Past MAX_PX the spacer stops
+   growing and the scroll position maps to a row proportionally instead. */
+const MAX_PX = 8000000;
+
+function tableGeom() {
+  const n = A.view.rows.length;
+  const full = n * ROW_H;
+  return { n, scaled: full > MAX_PX, height: Math.min(full, MAX_PX) };
+}
+
 function renderTableHead() {
   const v = A.view;
   $('aCount').textContent = `${v.rows.length.toLocaleString()} ${t('rows')}`;
-  $('aSpacer').style.height = `${v.rows.length * ROW_H}px`;
+  $('aSpacer').style.height = `${tableGeom().height}px`;
   $('aRowsEmpty').hidden = v.rows.length > 0;
 }
 
-function rawLine(n) {
-  if (A.text == null) return '';
-  if (!A.lines) A.lines = A.text.split(/\r?\n/);
-  return A.lines[n - 1] || '';
+/* Row tooltips show the raw log line. The text lives in the worker, so the
+   lines in view are fetched in one request after the rows are drawn. */
+let rawGen = 0;
+function fillRaw(els) {
+  const want = els.filter((el) => el.dataset.line && !el.title);
+  const need = [...new Set(want.map((el) => +el.dataset.line).filter((n) => !A.rawCache.has(n)))];
+  const apply = () => { for (const el of want) { const txt = A.rawCache.get(+el.dataset.line); if (txt != null) el.title = txt; } };
+  if (!need.length || !A.src) { apply(); return; }
+  const gen = ++rawGen;
+  A.src.lines(need).then((lines) => {
+    if (A.rawCache.size > 4000) A.rawCache.clear();
+    need.forEach((n, i) => A.rawCache.set(n, lines[i]));
+    if (gen === rawGen) apply();
+  }).catch(() => {});
 }
 
 let lastFirst = -1;
@@ -905,21 +990,31 @@ function renderRows(force = false) {
   const v = A.view;
   if (!v) return;
   const pane = $('aPane');
-  const first = Math.max(0, Math.floor(pane.scrollTop / ROW_H) - 8);
+  const g = tableGeom();
   const count = Math.ceil(pane.clientHeight / ROW_H) + 16;
+  let first, top0;
+  if (!g.scaled) {
+    first = Math.max(0, Math.floor(pane.scrollTop / ROW_H) - 8);
+    top0 = first * ROW_H;
+  } else {
+    const frac = pane.scrollTop / Math.max(1, g.height - pane.clientHeight);
+    const firstVisible = Math.floor(Math.min(1, frac) * Math.max(0, g.n - Math.ceil(pane.clientHeight / ROW_H)));
+    first = Math.max(0, firstVisible - 8);
+    top0 = pane.scrollTop - (firstVisible - first) * ROW_H;
+  }
   if (!force && first === lastFirst) return;
   lastFirst = first;
   const res = A.res;
   const out = [];
   for (let r = first; r < Math.min(v.rows.length, first + count); r++) {
-    const s = res.samples[v.rows[r]];
+    const s = sampleAt(res, v.rows[r]);
     const tg = res.targets[s.tgt];
     const lost = s.status !== 'ok' && s.status !== 'dup';
     const why = s.inferred
       ? (s.tail ? t('Inferred: ping\'s summary counts more packets sent than the log shows.') : t('Inferred: this sequence number never appears in the log, so the packet got no reply.'))
-      : rawLine(s.line);
+      : '';
     const rtt = s.rtt == null ? '—' : (s.lt ? '<1 ms' : ms(s.rtt, s.rtt < 10 ? 2 : 1));
-    out.push(`<div class="lrow arow${lost ? ' lost' : ''}${s.status === 'dup' ? ' dup' : ''}" style="top:${r * ROW_H}px" title="${esc(why)}">`
+    out.push(`<div class="lrow arow${lost ? ' lost' : ''}${s.status === 'dup' ? ' dup' : ''}" style="top:${top0 + (r - first) * ROW_H}px"${why ? ` title="${esc(why)}"` : ` data-line="${s.line}"`}>`
       + `<span class="c-line num">${s.line}</span>`
       + `<span class="c-time num">${fmtTime(s.at)}</span>`
       + `<span class="c-tgt"><i class="dot" style="background:${tg.color}"></i>${esc(tg.label)}</span>`
@@ -931,6 +1026,7 @@ function renderRows(force = false) {
       + '</div>');
   }
   $('aRows').innerHTML = out.join('');
+  fillRaw([...$('aRows').children]);
 }
 
 function syncFilterUI() {
@@ -977,7 +1073,8 @@ function openDetails(section) {
   h(t('How the file was read'));
   p(`${FORMAT_NAMES[res.format] || '—'}${res.lang ? ' · ' + (LANG_NAMES[res.lang] || res.lang) : ''} · ${res.encoding || 'UTF-8'} · ${res.lineCount} ${t('lines')} · ${res.sessions.length} ${t('runs')} · ${res.targets.length} ${t('targets')}`);
   p(basisTitle(res), 'muted');
-  const inferred = res.samples.filter((s) => s.inferred).length;
+  let inferred = 0;
+  for (let i = 0; i < res.n; i++) if (res.cols.flags[i] & F_INFERRED) inferred++;
   if (inferred) p(`${inferred} ${t('lost probes were inferred from gaps in the sequence numbers or from ping\'s summary — Linux ping prints nothing for a packet that never came back.')}`, 'muted');
   if (res.dups) p(`${res.dups} ${t('duplicate replies were kept in the table and left out of every statistic.')}`, 'muted');
 
@@ -1021,7 +1118,7 @@ function schema() {
     sheet: 'Ping log',
     prefix: 'carino-ping-log',
     rows: (idx) => idx.map((k) => {
-      const s = res.samples[k];
+      const s = sampleAt(res, k);
       const tg = res.targets[s.tgt];
       return [
         s.seq ?? '', exportStamp(s.at), s.inferred ? `${res.basis} (inferred)` : res.basis,
@@ -1032,8 +1129,15 @@ function schema() {
   };
 }
 
+// Excel and LibreOffice stop at 1 048 576 rows, the header included.
+const SHEET_ROWS = 1048575;
+
 export async function exportAs(kind) {
   if (!A.res || !A.view.rows.length) { notify(t('Nothing to export — load a log first.'), 'warn'); return; }
+  if (kind !== 'csv' && A.view.rows.length > SHEET_ROWS) {
+    notify(t('XLSX and ODS hold at most 1,048,576 rows. Filter the table (a time range, a target, "Lost") or export CSV, which has no limit.'), 'warn');
+    return;
+  }
   try {
     if (kind === 'csv') exportCSV(A.view.rows, schema());
     else await exportSheet(A.view.rows, kind, schema());
@@ -1053,6 +1157,54 @@ const METHOD = 'Read from a saved ping log, not measured by this browser: these 
   + 'unreachable" as a received reply; this report counts it as lost. Statistics are min, p50, p95 and max, jitter '
   + 'is the RFC 3550 mean absolute difference between consecutive replies, and loss is pooled over probes.';
 
+/* stats.js's extremes() and lossEvents() walk an object per sample; these are
+   the same two tables computed from the columns. */
+function colExtremes(visible, n) {
+  const c = A.res.cols;
+  const peaks = [];
+  const lows = [];
+  for (const tg of visible) {
+    const p50 = tg.series.q(50);
+    let best = -1;
+    const L = tg.list;
+    for (let q = 0; q < L.length; q++) {
+      const k = L[q], r = c.rtt[k];
+      if (c.status[k] !== OK || r !== r || (c.flags[k] & F_COLD)) continue;
+      if (best < 0 || r < c.rtt[best]) best = k;
+      if (p50 == null || r <= p50) continue;
+      // keep only the n largest excursions seen so far
+      if (peaks.length < n || r - p50 > peaks[peaks.length - 1].over) {
+        peaks.push({ target: tg.label, rtt: r, at: c.at[k], over: r - p50, kind: 'high' });
+        peaks.sort((a, b) => b.over - a.over);
+        if (peaks.length > n) peaks.pop();
+      }
+    }
+    if (best >= 0) lows.push({ target: tg.label, rtt: c.rtt[best], at: c.at[best], over: null, kind: 'low' });
+  }
+  lows.sort((a, b) => a.rtt - b.rtt);
+  return [...peaks, ...lows];
+}
+
+function colLossEvents(visible) {
+  const c = A.res.cols;
+  const out = [];
+  for (const tg of visible) {
+    let count = 0, firstAt = null, lastAt = null;
+    const kinds = new Set();
+    const L = tg.list;
+    for (let q = 0; q < L.length; q++) {
+      const k = L[q], s = c.status[k];
+      if (s === OK || s === DUP) continue;
+      count++;
+      kinds.add(STATUS[s]);
+      if (firstAt == null) firstAt = c.at[k];
+      lastAt = c.at[k];
+    }
+    if (count) out.push({ target: tg.label, count, kinds: [...kinds], firstAt, lastAt });
+  }
+  return out.sort((a, b) => b.count - a.count);
+}
+
 export function report() {
   if (!A.res) { notify(t('Nothing to export — load a log first.'), 'warn'); return; }
   const v = A.view;
@@ -1064,8 +1216,8 @@ export function report() {
     openReport(reportHtml({
       summary: sum,
       targets: list.map((s) => s.snapshot()),
-      extremes: extremes(list, 5),
-      lossEvents: lossEvents(list),
+      extremes: colExtremes(v.visible, 5),
+      lossEvents: colLossEvents(v.visible),
       verdict: t(verdict(sum).text),
       method: t(METHOD),
       fmtTime,
@@ -1090,7 +1242,9 @@ export function report() {
 }
 
 export function clear() {
-  A.res = null; A.text = null; A.lines = null; A.file = null; A.view = null; A.range = null;
+  if (A.src) A.src.close();
+  A.res = null; A.src = null; A.file = null; A.view = null; A.range = null;
+  A.rawCache.clear();
   $('aPaste').value = '';
   notify('');
   render();
@@ -1150,7 +1304,7 @@ export function init({ notice }) {
     loadText(text, t('pasted text'));
   });
   $('aExample').addEventListener('click', () => loadText(exampleLog(), 'example-ping-D.log'));
-  $('aCancel').addEventListener('click', () => { if (job) { job.cancelled = true; cancelParse(); } });
+  $('aCancel').addEventListener('click', cancelJob);
 
   $('aFormat').addEventListener('change', (e) => { A.opts.format = e.target.value; reparse(); });
   $('aInterval').addEventListener('change', (e) => { A.opts.interval = +e.target.value; save(); reparse(); });
