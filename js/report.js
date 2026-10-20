@@ -80,8 +80,8 @@ function styles() {
   table.tgt th:nth-child(1), table.tgt td:nth-child(1) { width: 22px; }
   table.tgt th:nth-child(2), table.tgt td:nth-child(2) { width: 17%; }
   body[data-level="basic"] table.tgt th:nth-child(2), body[data-level="basic"] table.tgt td:nth-child(2) { width: 46%; }
-  table.tgt th:nth-child(11), table.tgt td:nth-child(11) { width: 8%; }
-  table.tgt th:nth-child(12), table.tgt td:nth-child(12) { width: 78px; }
+  table.tgt .tm { width: 8%; }
+  table.tgt .vd { width: 78px; }
   table.ext th:nth-child(2), table.ext td:nth-child(2) { width: 34%; }
   .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; overflow-wrap: anywhere; }
   .muted { color: #94a3b8; }
@@ -154,7 +154,9 @@ const row = (label, value, cls) => (value ? `<div${cls ? ` class="${cls}"` : ''}
 const basicNote = (t) => `<p class="basic-only muted" style="font-size:10.5px;margin-top:18px">${esc(t('Advanced (top of the page) adds the full statistics per target, the spread of each target, the peaks and lows, every gap in the replies and how the figures were measured.'))}</p>`;
 
 /** Per-target distribution. The table the reader actually needs. */
-function targetsTable(targets, t, icmp = false) {
+/* A log report omits the Timing column: every sample in it is an ICMP reply
+   from the ping command, so the column could only ever say one thing. */
+function targetsTable(targets, t, log = false) {
   if (!targets.length) return `<p class="muted">${esc(t('No targets were measured.'))}</p>`;
   const rows = targets.map((s, i) => {
     const sev = s.loss >= 5 ? 'bad' : s.loss > 0 ? 'warn' : 'ok';
@@ -170,8 +172,8 @@ function targetsTable(targets, t, icmp = false) {
       <td class="r nw more">${esc(ms(s.p95))}</td>
       <td class="r nw">${esc(ms(s.max))}</td>
       <td class="r nw more">${esc(ms(s.jitter))}</td>
-      <td class="more">${esc(icmp ? 'ICMP' : (s.detail ? 'TTFB' : t('total only')))}</td>
-      <td><span class="sev ${sev}">${esc(word)}</span></td>
+      ${log ? '' : `<td class="more tm">${esc(s.detail ? 'TTFB' : t('total only'))}</td>`}
+      <td class="vd"><span class="sev ${sev}">${esc(word)}</span></td>
     </tr>`;
   }).join('');
   return `<div class="scroll"><table class="tgt">
@@ -179,7 +181,7 @@ function targetsTable(targets, t, icmp = false) {
       <th></th><th>${esc(t('Target'))}</th><th class="r more">${esc(t('Sent'))}</th><th class="r">${esc(t('Loss'))}</th>
       <th class="r more">${esc(t('Min'))}</th><th class="r">${esc(t('Average'))}</th><th class="r more">p50</th>
       <th class="r more">p95</th><th class="r">${esc(t('Max'))}</th><th class="r more">${esc(t('Jitter'))}</th>
-      <th class="more">${esc(t('Timing'))}</th><th>${esc(t('Verdict'))}</th>
+      ${log ? '' : `<th class="more tm">${esc(t('Timing'))}</th>`}<th class="vd">${esc(t('Verdict'))}</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 

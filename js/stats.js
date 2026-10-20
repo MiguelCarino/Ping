@@ -147,12 +147,16 @@ export function combine(seriesList) {
     is what the tooltip and the report print. The badge has to survive being two
     words wide next to eleven other controls, so it names the conclusion and
     leaves the reasoning to the sentence. */
-export function verdict(s) {
+export function verdict(s, log = false) {
   const v = (key, short, text) => ({ key, short, text });
   if (!s.sent) return v('idle', 'No data', 'No data yet.');
-  if (s.loss >= 100) return v('bad', 'No reply', 'No response at all — target unreachable from this browser.');
+  if (s.loss >= 100) return v('bad', 'No reply', log
+    ? 'No response at all — target unreachable from the machine that ran ping.'
+    : 'No response at all — target unreachable from this browser.');
   if (s.loss >= 5) return v('bad', 'Packet loss', 'Loss above 5% — this link will stutter on calls and stall on transfers.');
-  if (s.loss > 0) return v('warn', 'Some loss', 'Some requests never came back — intermittent loss.');
+  if (s.loss > 0) return v('warn', 'Some loss', log
+    ? 'Some probes never came back — intermittent loss.'
+    : 'Some requests never came back — intermittent loss.');
   if (s.p95 == null) return v('idle', 'No data', 'No data yet.');
   if (s.p95 > 600) return v('bad', 'Very slow', 'Very high latency — interactive use will feel broken.');
   if (s.p95 > 250) return v('warn', 'Slow', 'High latency — noticeable lag on anything interactive.');

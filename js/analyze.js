@@ -531,7 +531,7 @@ function setVerdict(sum) {
   if (!A.active) return;
   const el = $('verdict');
   if (!sum) { el.textContent = t('No data'); el.title = t('No data yet.'); el.dataset.key = 'idle'; return; }
-  const v = verdict(sum);
+  const v = verdict(sum, true);
   el.textContent = t(v.short);
   el.title = t(v.text);
   el.dataset.key = v.key;
@@ -1160,7 +1160,7 @@ export async function exportAs(kind) {
   }
 }
 
-const METHOD = 'Read from a saved ping log, not measured by this browser: these are real ICMP round trips, taken by '
+const METHOD = 'Read from a saved ping log: these are ICMP round trips, taken by '
   + 'whatever machine ran the ping command. Lost probes are counted from what the log shows — Windows and macOS '
   + 'print a line for each timeout; Linux prints nothing, so a missing sequence number is counted as lost, and '
   + 'packets lost after the last reply are recovered from the summary\'s "packets transmitted". Duplicate replies '
@@ -1231,7 +1231,7 @@ export function report() {
       targets: list.map((s) => s.snapshot()),
       extremes: colExtremes(v.visible, 5),
       lossEvents: colLossEvents(v.visible),
-      verdict: t(verdict(sum).text),
+      verdict: t(verdict(sum, true).text),
       method: t(METHOD),
       fmtTime,
       chart: { x0: v.x0, x1: v.x1, fmtX: makeFmtX(), series: timeSeries(v) },
