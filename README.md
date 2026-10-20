@@ -113,13 +113,15 @@ Exports carry the rows the table shows — sequence, timestamp in the log's own 
 
 **Report** opens a standalone HTML document in a new tab with a Print / Save as PDF button — the same approach Topo takes, and for the same reason: turning HTML into a PDF is the browser's job, so there is no PDF library in this repo (dropping jsPDF removed ~900 kB of vendored script). It prints the *distribution*, not the log: summary, per-target min/average/p50/p95/max/jitter/loss, peaks and lows, unanswered probes, the connection, the client identifier and the method. A run at half-second intervals makes hundreds of rows an hour and nobody reads row 300 — that is what the spreadsheet exports are for, and the report says so.
 
+The report draws its charts as inline SVG, so they survive email, printing and offline viewing: latency over time (each target's average per time slice, with its fastest-to-slowest band), the share of probes lost per slice, and in Advanced a spread per target (min–max, p50–p95, average). The colours are a darker step of the screen palette, checked for colour-vision separation against white paper. A **Basic / Advanced** switch at the top of the report picks the level of detail. Basic, the default, has the verdict, four headline numbers, the charts and a short per-target table. Advanced adds the full statistics, peaks and lows, unanswered probes, the log cross-check and the method. Printing prints whichever level is on screen, and the choice is remembered.
+
 Peaks are ranked by how far a sample sat **above its own target's median**, not by absolute time. Ranked absolutely every row comes from whichever host is furthest away, and the table just says "the slow one is slow"; ranked by excursion, a real spike on a fast host appears next to a slow host's normal traffic. Lows are each target's best sample.
 
 ## Shape
 
 The navbar holds one primary action per mode — **Start** (which turns into a red Stop with a pulsing dot, so no separate state chip) or **Open log** — plus Clear and Method as icons and a single **Export** menu for the report and the three spreadsheet formats. The menu is positioned against the viewport, because on a phone the navbar's action strip scrolls and would clip it.
 
-Loading a log shows a progress card — read, decode, parse, draw — with the bytes read, then lines parsed and samples found as the worker reports them, and a Cancel that throws the worker away and keeps whatever log was on screen.
+Loading a log shows a progress card — read, parse, draw — with the bytes read, then lines parsed and samples found as the worker reports them, and a Cancel that throws the worker away and keeps whatever log was on screen.
 
 The verdict is a **badge in the navbar**, not a bar across the page: it names the conclusion in a word (*Healthy*, *Usable*, *Slow*, *Packet loss*, *No reply*) and carries the full sentence in its tooltip, which is also what the report prints. That removed a whole row from the layout.
 

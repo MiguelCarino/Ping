@@ -456,6 +456,21 @@ async function doExport(kind) {
   }
 }
 
+/** The run as time and round-trip columns per target, for the report's
+    charts. Warm-up requests are left out, as they are from the statistics. */
+function liveChart() {
+  const by = new Map(state.targets.map((tg) => [tg.raw, { label: tg.raw, t: [], v: [] }]));
+  let x0 = Infinity, x1 = -Infinity;
+  for (const r of state.log) {
+    const s = by.get(r.target);
+    if (!s || r.cold) continue;
+    s.t.push(r.at); s.v.push(r.ok ? r.rtt : NaN);
+    if (r.at < x0) x0 = r.at;
+    if (r.at > x1) x1 = r.at;
+  }
+  return { x0, x1, series: [...by.values()].filter((s) => s.t.length) };
+}
+
 function buildReport() {
   const list = state.targets.map((x) => x.series);
   const sum = combine(list);
@@ -466,6 +481,7 @@ function buildReport() {
     lossEvents: lossEvents(list),
     verdict: t(verdict(sum).text),
     method: t(METHOD),          // translated like everything else on the sheet
+    chart: liveChart(),
     env: conn.env || environment(),
     speed: conn.speed,
     stun: conn.stun,

@@ -731,6 +731,26 @@ function lossBucket(span) {
 }
 const bucketName = (b) => (b < 60000 ? `${b / 1000} s` : b < 3600000 ? `${b / 60000} min` : b < 86400000 ? `${b / 3600000} h` : t('day'));
 
+/** Each visible target as time and round-trip columns, NaN for a lost probe,
+    duplicates left out — what the time chart and the report's charts draw. */
+function timeSeries(v) {
+  const c = A.res.cols;
+  return v.visible.map((tg) => {
+    const L = tg.list;
+    let m = 0;
+    for (let q = 0; q < L.length; q++) if (c.status[L[q]] !== DUP) m++;
+    const T = new Float64Array(m), V = new Float64Array(m);
+    let o = 0;
+    for (let q = 0; q < L.length; q++) {
+      const k = L[q], s = c.status[k];
+      if (s === DUP) continue;
+      T[o] = c.at[k];
+      V[o++] = s === OK ? c.rtt[k] : NaN;
+    }
+    return { label: tg.label, color: tg.color, t: T, v: V };
+  });
+}
+
 function drawChartNow() {
   const res = A.res, v = A.view;
   if (!res || !v) return;
@@ -741,22 +761,15 @@ function drawChartNow() {
   if (A.tab === 'time' || A.tab === 'ttl') {
     const ttl = A.tab === 'ttl';
     const c = res.cols;
-    const series = v.visible.map((tg) => {
+    const series = !ttl ? timeSeries(v) : v.visible.map((tg) => {
       const L = tg.list;
       let m = 0;
-      for (let q = 0; q < L.length; q++) {
-        const k = L[q];
-        if (c.status[k] === DUP) continue;
-        if (!ttl || (c.status[k] === OK && c.ttl[k] >= 0)) m++;
-      }
+      for (let q = 0; q < L.length; q++) if (c.status[L[q]] === OK && c.ttl[L[q]] >= 0) m++;
       const T = new Float64Array(m), V = new Float64Array(m);
       let o = 0;
       for (let q = 0; q < L.length; q++) {
-        const k = L[q], s = c.status[k];
-        if (s === DUP) continue;
-        if (ttl) { if (s === OK && c.ttl[k] >= 0) { T[o] = c.at[k]; V[o++] = c.ttl[k]; } continue; }
-        T[o] = c.at[k];
-        V[o++] = s === OK ? c.rtt[k] : NaN;
+        const k = L[q];
+        if (c.status[k] === OK && c.ttl[k] >= 0) { T[o] = c.at[k]; V[o++] = c.ttl[k]; }
       }
       return { label: tg.label, color: tg.color, t: T, v: V };
     });
@@ -1221,6 +1234,7 @@ export function report() {
       verdict: t(verdict(sum).text),
       method: t(METHOD),
       fmtTime,
+      chart: { x0: v.x0, x1: v.x1, fmtX: makeFmtX(), series: timeSeries(v) },
       source: {
         file: A.file ? A.file.name : '',
         size: A.file ? fmtSize(A.file.size) : '',
