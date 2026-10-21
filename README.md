@@ -2,6 +2,8 @@
 
 Client-side network latency measurement and ping log analysis — part of [Carino Systems](https://carino.systems). Live at **ping.carino.systems**.
 
+![Ping](screenshot.webp)
+
 Two modes on one page. **Live** measures round trip, jitter, packet loss and the DNS/TCP/TLS/TTFB split for any set of websites, from your own browser. **Log file** (`#log`) reads output the `ping` command already wrote — on Linux, a router, a Mac or Windows — and analyzes it: detection, a filterable table, charts, the same statistics, exports and report. Nothing is uploaded in either mode; the only traffic is the live probes themselves, going to the hosts you name.
 
 ## What it measures, and what it cannot
@@ -156,6 +158,8 @@ SheetJS is fetched only when someone presses XLSX or ODS, so a page view that ne
 The parser has its own tests, with a fixture per format, language and encoding (`tests/fixtures/`): `node --test tests/parse.test.mjs`.
 
 Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet. **The report is translated too** — every heading, column, verdict and the whole method paragraph, with the document's own `lang` attribute set to match. That is checked programmatically rather than by eye: a test walks every `t()` key reachable from the report and asserts it resolves in all four non-English locales.
+
+**Related tools:** [Test](https://test.carino.systems/) · [Topo](https://topo.carino.systems/) · [Hardware](https://hardware.carino.systems/)
 
 ## Licence
 
