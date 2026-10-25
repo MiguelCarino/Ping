@@ -14,16 +14,9 @@
    prose lives in a dialog rather than below the fold. */
 
 :root{
-  --bg:#050505; --bg-elev:#0d0d0d; --bg-card:#0b0b0b;
-  --accent:#eab308; --accent-hi:#fbbf24;
-  --accent-faint:rgba(234,179,8,.05); --accent-glow:rgba(234,179,8,.15); --accent-dim:rgba(234,179,8,.3);
-  --border:#262626; --border-hi:#3a3a3a;
-  --text:#fff; --text-sec:#a3a3a3; --text-muted:#8a8a8a;
-  --ok:#22c55e; --warn:#eab308; --err:#ef4444;
-  --sans:'IBM Plex Sans',system-ui,sans-serif;
-  --mono:'IBM Plex Mono',ui-monospace,monospace;
-  --display:'Red Hat Display',var(--sans);
-  --nav-h:60px;
+  /* Fleet tokens come from carino-ui.css; these are Ping's own additions. */
+  --accent-hi:#fbbf24;
+  --border-hi:#3a3a3a;
   --gap:10px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -62,10 +55,10 @@ code{font-family:var(--mono);font-size:.92em;color:var(--accent-hi);}
 .cs-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-faint);}
 .cs-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-faint);}
 .cs-btn:disabled{opacity:.45;cursor:not-allowed;}
-.cs-btn.primary{border-color:var(--accent);color:var(--accent);font-weight:700;min-width:74px;}
-.cs-btn.primary:hover{background:var(--accent);color:#050505;}
-.cs-btn.primary.running{border-color:var(--err);color:var(--err);}
-.cs-btn.primary.running:hover{background:var(--err);color:#050505;}
+/* Filled gold comes from carino-ui.css's .cs-btn.primary; running turns it red. */
+.cs-btn.primary{min-width:74px;}
+.cs-btn.primary.running{background:var(--err);border-color:var(--err);color:#050505;}
+.cs-btn.primary.running:hover{background:#f87171;border-color:#f87171;color:#050505;}
 .cs-btn.tiny{height:24px;font-size:.62rem;padding:0 8px;min-width:0;}
 .cs-select{padding:0 6px;}
 select.cs-select{-webkit-appearance:none;appearance:none;}
@@ -78,12 +71,12 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
   border:1px solid var(--border);border-radius:8px;background:var(--bg-card);padding:9px 12px;}
 .slabel{font-family:var(--mono);font-size:.6rem;letter-spacing:.09em;text-transform:uppercase;
   color:var(--text-muted);flex-shrink:0;}
-.field{height:32px;padding:0 10px;background:#000;border:1px solid var(--border);border-radius:5px;color:var(--text);
+.input{height:32px;padding:0 10px;background:#000;border:1px solid var(--border);border-radius:5px;color:var(--text);
   font-family:var(--mono);font-size:.76rem;transition:.15s;min-width:0;}
-.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-faint);}
-.field:disabled{opacity:.5;}
-.field::placeholder{color:#4a4a4a;}
-.field.sm{height:26px;font-size:.68rem;width:150px;}
+.input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-faint);}
+.input:disabled{opacity:.5;}
+.input::placeholder{color:#4a4a4a;}
+.input.sm{height:26px;font-size:.68rem;width:150px;}
 .strip .grow{flex:4 1 260px;}
 .strip .path{flex:1 1 130px;max-width:190px;}
 .opt{display:flex;align-items:center;gap:7px;font-size:.68rem;color:var(--text-muted);cursor:pointer;flex-shrink:0;}
@@ -160,7 +153,7 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .tcard{border:1px solid var(--border);border-radius:7px;background:var(--bg-elev);padding:10px 11px;
   display:flex;flex-direction:column;gap:8px;min-width:0;flex-shrink:0;}
 .tcard header{display:flex;align-items:center;gap:7px;min-width:0;}
-.tcard .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.tcard .tdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .tcard .tname{font-family:var(--mono);font-size:.76rem;font-weight:600;color:var(--text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
 .chip{font-family:var(--mono);font-size:.53rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
@@ -192,7 +185,7 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .lrow.lost{background:rgba(239,68,68,.045);}
 .lrow .c-seq,.lrow .c-time{color:var(--text-muted);}
 .lrow .c-tgt{display:flex;align-items:center;gap:6px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.lrow .c-tgt .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.lrow .c-tgt .tdot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
 .lrow .c-rtt{color:var(--accent);font-weight:600;}
 .lrow .c-ph{color:var(--text-muted);font-size:.63rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .lrow .c-st.ok{color:var(--ok);}
@@ -279,7 +272,7 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
 .dz-inner h2{font-family:var(--display);font-size:1.2rem;font-weight:700;}
 .dz-lead{font-size:.82rem;line-height:1.6;color:var(--text-sec);}
 .dz-actions{display:flex;gap:8px;flex-wrap:wrap;}
-.field.paste{height:auto;min-height:110px;padding:9px 10px;resize:vertical;line-height:1.45;font-size:.7rem;}
+.input.paste{height:auto;min-height:110px;padding:9px 10px;resize:vertical;line-height:1.45;font-size:.7rem;}
 .dz-formats{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 14px;
   font-size:.72rem;color:var(--text-muted);margin-top:4px;}
 .dz-formats b{color:var(--text-sec);font-weight:600;margin-right:4px;}
@@ -329,7 +322,7 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
 .pane-head.filters h2{margin-right:auto;display:flex;align-items:baseline;gap:6px;}
 .pane-head.filters h2 small{font-family:var(--mono);font-size:.6rem;font-weight:400;}
 .pane-head.filters .cs-btn{height:26px;font-size:.64rem;flex-shrink:0;}
-.field.xs{height:26px;width:58px;padding:0 6px;font-size:.66rem;}
+.input.xs{height:26px;width:58px;padding:0 6px;font-size:.66rem;}
 
 /* The virtual table: a spacer as tall as every row would be, and only the rows
    in view rendered inside it, absolutely placed. */
@@ -385,33 +378,14 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
   border:1px solid var(--border);border-radius:6px;padding:8px 10px;max-height:260px;overflow:auto;white-space:pre;margin:6px 0 10px;}
 
 /* ---- narrow ----
-
-   The shared navbar lays its right cluster out with flex-wrap:nowrap, which is
-   right for the two or three controls most fleet apps put there. Ping puts
-   twelve, and at 390px that pushed the document to 742px wide — measured, not
-   guessed. The shared file is fleet-propagated and not ours to fork, so the
-   app's own control strip is what gives: it becomes a compact horizontally
-   scrollable toolbar and stops forcing width on anything else.
-
-   carino-navbar.js appends its stylesheet to <head> at runtime, i.e. after this
-   file, so a selector of equal weight loses on source order. These are prefixed
-   with `body` to outrank it — the one place this sheet deliberately reaches
-   into the shared chrome. */
+   The navbar fits itself: on a narrow screen carino-navbar.js folds the app's
+   controls into its ⋯ menu and keeps the ones marked data-priority="1" (Start,
+   or Open log) in the bar, so nothing here reaches into the shared chrome. */
 @media (max-width:1100px){
   .tiles{grid-template-columns:repeat(4,1fr);}
   .grid{grid-template-columns:minmax(240px,290px) 1fr;}
 }
 @media (max-width:860px){
-  body #carinoNav{padding:0 12px;gap:10px;}
-  /* The brand must not shrink: at 390px `flex:0 1 auto` clipped "Carino" to
-     "Cai". Only the app control strip gives way. */
-  body #carinoNav .cn-left{flex:0 0 auto;min-width:0;}
-  body #carinoNav .cn-right{flex:1 1 auto;min-width:0;justify-content:flex-end;gap:8px;}
-  body #carinoNav .cn-actions{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;
-    scrollbar-width:none;-ms-overflow-style:none;}
-  body #carinoNav .cn-actions::-webkit-scrollbar{display:none;}
-  body #carinoNav .cn-actions > *{flex:0 0 auto;}
-  body #carinoNav .social-row{flex:0 0 auto;}
   .cs-btn{padding:0 8px;font-size:.68rem;}
   .cs-btn.primary{min-width:62px;}
 
@@ -495,10 +469,16 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
 }
 @media (max-height:460px){
     .strip{padding:5px 9px;}
-  .field{height:28px;}
+  .input{height:28px;}
   .chartpane{min-height:60px;}
   .logpane{min-height:54px;}
   .cards{max-height:min(120px,34dvh);}
   .pane-head{padding:5px 10px;}
   .pane-head h2{font-size:.72rem;}
 }
+
+/* ---- source line ----
+   The one-line .data-foot (carino-ui.css) closes both screens. It never
+   grows, so the panes above keep the height they had. */
+.app>.data-foot{flex-shrink:0;padding:6px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media (max-width:640px){.app>.data-foot{white-space:normal;}}

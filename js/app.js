@@ -47,6 +47,7 @@ const state = {
   filter: '',
   startedAt: null,
   endedAt: null,
+  lastSampleAt: null,   // wall clock of the newest recorded sample, for the navbar stamp
   waiters: new Set(),   // resolve handles for the cancellable sleeps
 };
 
@@ -156,6 +157,7 @@ async function runTarget(tg) {
     state.seq++;
     const row = { seq: state.seq, target: tg.raw, ...sample };
     state.log.push(row);
+    state.lastSampleAt = Date.now();
     appendLogRow(row, tg.color);
     schedulePaint();
 
@@ -172,6 +174,7 @@ async function start() {
   state.startedAt = Date.now();
   state.endedAt = null;
   setRunUI(true);
+  renderFresh();
   renderCards();
 
   // Bandwidth first, on purpose: probing during a saturated download measures
@@ -189,6 +192,7 @@ function stop() {
   state.endedAt = Date.now();
   wakeAll();
   setRunUI(false);
+  renderFresh();
   schedulePaint();
 }
 
@@ -203,11 +207,60 @@ function setRunUI(on) {
   ['targetInput', 'pathInput'].forEach((id) => { $(id).disabled = on; });
 }
 
+/* ---- source and freshness ---------------------------------------------------
+
+   The navbar says where the numbers come from and how old the newest one is.
+   Every state reads differently: measuring (green), paused because the tab is
+   hidden (dashed), stopped, and a run whose newest sample is overdue (amber),
+   which is what a stalled line looks like from here. */
+
+function ago(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 120 ? t('{n}s ago').replace('{n}', s) : t('{n} min ago').replace('{n}', Math.round(s / 60));
+}
+
+// Only touch what changed: the navbar refits on every class change it sees.
+function setText(el, v) { if (el.textContent !== v) el.textContent = v; }
+function setClass(el, v) { if (el.className !== v) el.className = v; }
+
+function renderFresh() {
+  const chip = $('srcChip');
+  const stamp = $('freshStamp');
+  if (!chip || !stamp) return;
+  if (mode === 'log') {
+    setClass(chip, 'live-chip');
+    setText(chip, t('Log file'));
+    chip.title = t('Readings come from the file you opened, not from this browser');
+    return;
+  }
+  const paused = state.running && document.hidden && !state.runHidden;
+  const last = state.lastSampleAt;
+  setClass(chip, 'live-chip' + (paused ? ' paused' : state.running ? ' live' : ''));
+  setText(chip, paused ? t('Paused (tab hidden)') : t('This browser'));
+  chip.title = t('Every reading is taken by this browser');
+  let text, cls;
+  if (!last) {
+    text = state.running ? t('Waiting for the first sample') : t('No samples yet');
+    cls = state.running ? '' : 'paused';
+  } else if (!state.running) {
+    text = t('Stopped · last sample {time}').replace('{time}', new Date(last).toLocaleTimeString());
+    cls = 'paused';
+  } else {
+    text = t('last sample {age}').replace('{age}', ago(Date.now() - last));
+    // A sample is overdue once a full interval plus the timeout has passed.
+    cls = paused ? 'paused' : (Date.now() - last > state.interval + timeoutFor(state.interval) ? 'stale' : '');
+  }
+  setClass(stamp, 'fresh' + (cls ? ' ' + cls : ''));
+  setText(stamp, text);
+}
+
 function clearAll() {
   if (state.running) stop();
   state.targets.forEach((tg) => { tg.series.reset(); tg.seen = false; });
   state.log = [];
   state.seq = 0;
+  state.lastSampleAt = null;
+  renderFresh();
   $('logBody').innerHTML = '';
   $('logEmpty').hidden = false;
   renderCards();
@@ -274,7 +327,7 @@ function renderCards() {
     const lossCls = s.loss >= 5 ? 'bad' : s.loss > 0 ? 'warn' : '';
     return `<article class="tcard">
       <header>
-        <span class="dot" style="background:${tg.color}"></span>
+        <span class="tdot" style="background:${tg.color}"></span>
         <span class="tname" title="${tg.url.href}">${escapeHtml(tg.raw)}</span>
         <span class="chip ${s.detail ? 'good' : ''}" title="${s.detail
         ? t('This server sends Timing-Allow-Origin, so the reading is true time-to-first-byte.')
@@ -310,7 +363,7 @@ function appendLogRow(row, color) {
   const when = new Date(row.at).toLocaleTimeString([], { hour12: false });
   el.innerHTML = `<span class="c-seq num">${row.seq}</span>`
     + `<span class="c-time num">${when}</span>`
-    + `<span class="c-tgt"><i class="dot" style="background:${color}"></i>${escapeHtml(row.target)}</span>`
+    + `<span class="c-tgt"><i class="tdot" style="background:${color}"></i>${escapeHtml(row.target)}</span>`
     + `<span class="c-rtt num">${row.ok ? ms(row.rtt) : '—'}</span>`
     + `<span class="c-ph num">${row.detail ? `${t('DNS')} ${row.dns.toFixed(0)} · TLS ${row.tls.toFixed(0)} · TTFB ${row.ttfb.toFixed(0)}` : (row.ok ? t('total only') : '')}</span>`
     + `<span class="c-st ${row.ok ? 'ok' : 'err'}">${row.cold && row.ok ? `<i class="cold" title="${t('First request to this host — includes the handshakes.')}">cold</i> ` : ''}${status}</span>`;
@@ -533,6 +586,7 @@ function setMode(next, { push = true } = {}) {
   if (push) history.replaceState(history.state, '', mode === 'log' ? '#log' : location.pathname + location.search);
   if (mode === 'log') analyze.activate();
   else { analyze.deactivate(); paint(); }
+  renderFresh();
 }
 
 /* ---- the export menu --------------------------------------------------------
@@ -653,7 +707,8 @@ function init() {
   // A hidden tab has its timers clamped to roughly one second, so readings
   // taken there measure the throttle, not the network. Pausing is the default;
   // the checkbox exists for someone deliberately leaving a run going.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) wakeAll(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wakeAll(); renderFresh(); });
+  setInterval(renderFresh, 1000);
 
   let resizeTimer;
   const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(paint, 120); };
@@ -662,7 +717,7 @@ function init() {
   // browsers; the visual viewport does report it.
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
   window.addEventListener('carino:langchange', () => {
-    setRunUI(state.running); renderConnection();
+    setRunUI(state.running); renderConnection(); renderFresh();
     // i18n.js resets the static titles first; this one depends on the mode.
     $('btnClear').title = mode === 'log' ? t('Close this log') : t('Clear all samples and statistics');
     if (mode === 'live') paint();
@@ -672,6 +727,7 @@ function init() {
   $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
   state.targets = parseTargets();
   document.body.dataset.mode = 'live';
+  renderFresh();
   paint();
   renderConnection();
   if (location.hash === '#log') setMode('log', { push: false });

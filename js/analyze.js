@@ -666,7 +666,7 @@ function renderCards() {
     const fromTitle = facts.from.slice(0, 8).map(([a, n]) => `${a} · ${n}`).join('\n');
     return `<article class="tcard">
       <header>
-        <span class="dot" style="background:${tg.color}"></span>
+        <span class="tdot" style="background:${tg.color}"></span>
         <span class="tname" title="${esc(tg.label)}${tg.ip ? ' · ' + esc(tg.ip) : ''}">${esc(tg.label)}</span>
         ${tg.ip && tg.ip !== tg.label ? `<span class="chip" title="${esc(t('Address the log resolved this target to'))}">${esc(tg.ip)}</span>` : ''}
       </header>
@@ -1030,7 +1030,7 @@ function renderRows(force = false) {
     out.push(`<div class="lrow arow${lost ? ' lost' : ''}${s.status === 'dup' ? ' dup' : ''}" style="top:${top0 + (r - first) * ROW_H}px"${why ? ` title="${esc(why)}"` : ` data-line="${s.line}"`}>`
       + `<span class="c-line num">${s.line}</span>`
       + `<span class="c-time num">${fmtTime(s.at)}</span>`
-      + `<span class="c-tgt"><i class="dot" style="background:${tg.color}"></i>${esc(tg.label)}</span>`
+      + `<span class="c-tgt"><i class="tdot" style="background:${tg.color}"></i>${esc(tg.label)}</span>`
       + `<span class="c-from">${esc(s.from || '')}</span>`
       + `<span class="c-seq num">${s.seq != null ? s.seq : ''}</span>`
       + `<span class="c-ttl num">${s.ttl != null ? s.ttl : ''}</span>`

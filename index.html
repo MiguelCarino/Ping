@@ -30,6 +30,7 @@
   <meta name="theme-color" content="#050505" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="fonts/carino-fonts.css" />
+  <link rel="stylesheet" href="carino-ui.css" />
   <link rel="stylesheet" href="css/ping.css" />
 </head>
 <body>
@@ -42,6 +43,10 @@
         <button class="cs-btn seg-btn" id="modeLive" aria-pressed="true" title="Measure from this browser" data-i18n>Live</button>
         <button class="cs-btn seg-btn" id="modeLog" aria-pressed="false" title="Analyze a saved ping log" data-i18n>Log file</button>
       </span>
+      <!-- Source and freshness: what is being measured from, and how old the
+           newest reading is. A hidden tab pauses the run, and says so here. -->
+      <span class="live-chip" id="srcChip" data-priority="2" title="Every reading is taken by this browser">This browser</span>
+      <span class="fresh paused" id="freshStamp" data-only="live">No samples yet</span>
       <span class="verdict-badge" id="verdict" data-key="idle" title="No data yet." data-i18n>No data</span>
       <span class="navsep" aria-hidden="true"></span>
       <select class="cs-btn cs-select" id="intervalSel" title="Time between probes" data-only="live">
@@ -52,8 +57,8 @@
         <option value="10000">10s</option>
         <option value="30000">30s</option>
       </select>
-      <button class="cs-btn primary" id="btnOpen" title="Open a ping log from this computer — it is read here and never uploaded" data-only="log" data-i18n>Open log</button>
-      <button class="cs-btn primary" id="btnRun" aria-pressed="false" title="Start or stop measuring" data-only="live">
+      <button class="cs-btn primary" id="btnOpen" data-priority="1" title="Open a ping log from this computer — it is read here and never uploaded" data-only="log" data-i18n>Open log</button>
+      <button class="cs-btn primary" id="btnRun" data-priority="1" aria-pressed="false" title="Start or stop measuring" data-only="live">
         <i class="rundot" aria-hidden="true"></i><span class="btn-label">Start</span>
       </button>
       <!-- Secondary actions are icons or a menu: the navbar holds one primary
@@ -86,11 +91,11 @@
     <!-- Targets -->
     <section class="strip targets">
       <label class="slabel" for="targetInput" data-i18n>Targets</label>
-      <input type="text" id="targetInput" class="field grow"
+      <input type="text" id="targetInput" class="input grow"
              value="8.8.8.8, cloudflare.com"
              placeholder="example.com, another.org"
              aria-label="Targets, comma separated" />
-      <input type="text" id="pathInput" class="field path" value="/favicon.ico"
+      <input type="text" id="pathInput" class="input path" value="/favicon.ico"
              title="Resource requested on each host. Small is what matters — a 404 answers just as well as a 200."
              aria-label="Probe path" />
       <label class="opt" title="The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.">
@@ -139,7 +144,7 @@
         <section class="panel pane logpane">
           <div class="pane-head">
             <h2 data-i18n>Samples</h2>
-            <input type="text" id="logFilter" class="field sm" placeholder="Filter by target…" aria-label="Filter samples by target" />
+            <input type="text" id="logFilter" class="input sm" placeholder="Filter by target…" aria-label="Filter samples by target" />
           </div>
           <div class="lhead">
             <span class="c-seq">#</span>
@@ -157,6 +162,7 @@
       </div>
     </div>
 
+    <p class="data-foot" data-i18n>Data: HTTPS requests from this browser to the targets you name, plus one STUN exchange when a run starts. Runs in your browser; nothing is uploaded.</p>
   </main>
 
   <!-- Log file mode. Same shape as the live screen — strip, tiles, cards,
@@ -173,7 +179,7 @@
           <button class="cs-btn primary" id="aChoose" data-i18n>Choose a file</button>
           <button class="cs-btn" id="aExample" title="An hour of ping -D against two hosts, with an outage, congestion and a route change" data-i18n>Load an example</button>
         </div>
-        <textarea id="aPaste" class="field paste" spellcheck="false" placeholder="…or paste ping output here" aria-label="Paste ping output"></textarea>
+        <textarea id="aPaste" class="input paste" spellcheck="false" placeholder="…or paste ping output here" aria-label="Paste ping output"></textarea>
         <div class="dz-actions"><button class="cs-btn" id="aAnalyzePaste" data-i18n>Analyze pasted text</button></div>
         <ul class="dz-formats">
           <li><b>Linux</b> <span data-i18n>iputils, with or without -D / -O</span></li>
@@ -268,10 +274,10 @@
                 <option value="error" data-i18n>Error</option>
                 <option value="dup" data-i18n>Duplicate</option>
               </select>
-              <label class="opt"><span>RTT ≥</span><input type="number" min="0" step="any" id="aFRtt" class="field xs" placeholder="ms" aria-label="Minimum round trip in ms" /></label>
+              <label class="opt"><span>RTT ≥</span><input type="number" min="0" step="any" id="aFRtt" class="input xs" placeholder="ms" aria-label="Minimum round trip in ms" /></label>
               <label class="opt" id="aFAroundLabel" title="Only the samples around each lost probe — the context of every incident">
                 <input type="checkbox" id="aFAround" /><span data-i18n>Around incidents ±</span>
-                <input type="number" min="0" max="500" id="aFAroundN" class="field xs" value="3" aria-label="Samples either side" disabled />
+                <input type="number" min="0" max="500" id="aFAroundN" class="input xs" value="3" aria-label="Samples either side" disabled />
               </label>
             </div>
             <div class="lhead ahead">
@@ -292,6 +298,8 @@
         </div>
       </div>
     </div>
+
+    <p class="data-foot" data-i18n>Data: the ping log you open, read in this tab. Runs in your browser; nothing is uploaded.</p>
 
     <div class="busy" id="aBusy" hidden>
       <div class="pcard" role="status" aria-live="polite">
