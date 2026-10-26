@@ -12,6 +12,24 @@
 
 const I18N = {
   es: {
+    // Translation sweep: strings that stayed in English
+    "More": "Más",
+    "Mode": "Modo",
+    "Targets, comma separated": "Destinos, separados por comas",
+    "Resource requested on each host. Small is what matters — a 404 answers just as well as a 200.": "Recurso que se pide a cada host. Lo importante es que sea pequeño: un 404 responde igual de bien que un 200.",
+    "The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.": "La primera petición a un host paga el DNS y los dos handshakes, así que marca de tres a cinco veces el valor estable. Activado, se envía para abrir la conexión y no se registra. Desactivado, se conserva y se muestra marcada como fría, y aun así queda fuera de las estadísticas.",
+    "Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.": "Los navegadores limitan los temporizadores de una pestaña oculta a cerca de un segundo, así que las lecturas tomadas ahí miden ese límite y no la red.",
+    "Per-target results": "Resultados por destino",
+    "Waiting for the first round trip…": "Esperando la primera ida y vuelta…",
+    "Filter samples by target": "Filtrar muestras por destino",
+    "Paste ping output": "Pegar salida de ping",
+    "Show the whole log": "Mostrar todo el log",
+    "Chart of the log": "Gráfico del log",
+    "Connection phases": "Fases de la conexión",
+    "Minimum round trip in ms": "Ida y vuelta mínima en ms",
+    "Samples either side": "Muestras a cada lado",
+    "Measure downlink and the STUN round trip now": "Medir ahora la bajada y la ida y vuelta STUN",
+    "Seq": "Sec.",
     "This browser": "Este navegador",
     "Every reading is taken by this browser": "Cada lectura la toma este navegador",
     "Paused (tab hidden)": "En pausa (pestaña oculta)",
@@ -403,6 +421,24 @@ const I18N = {
   },
 
   'pt-BR': {
+    // Translation sweep: strings that stayed in English
+    "More": "Mais",
+    "Mode": "Modo",
+    "Targets, comma separated": "Alvos, separados por vírgula",
+    "Resource requested on each host. Small is what matters — a 404 answers just as well as a 200.": "Recurso pedido a cada host. O que importa é ser pequeno — um 404 responde tão bem quanto um 200.",
+    "The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.": "A primeira requisição a um host paga o DNS e os dois handshakes, então marca de três a cinco vezes o valor estável. Ligado, ela é enviada para abrir a conexão e não é registrada. Desligado, ela é mantida e exibida, marcada como fria, e ainda fica fora das estatísticas.",
+    "Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.": "Os navegadores limitam os temporizadores de uma aba oculta a cerca de um segundo, então as leituras feitas ali medem esse limite e não a rede.",
+    "Per-target results": "Resultados por alvo",
+    "Waiting for the first round trip…": "Aguardando a primeira ida e volta…",
+    "Filter samples by target": "Filtrar amostras por alvo",
+    "Paste ping output": "Colar saída do ping",
+    "Show the whole log": "Mostrar o log inteiro",
+    "Chart of the log": "Gráfico do log",
+    "Connection phases": "Fases da conexão",
+    "Minimum round trip in ms": "Ida e volta mínima em ms",
+    "Samples either side": "Amostras de cada lado",
+    "Measure downlink and the STUN round trip now": "Medir agora o download e a ida e volta STUN",
+    "Seq": "Seq.",
     "This browser": "Este navegador",
     "Every reading is taken by this browser": "Cada leitura é feita por este navegador",
     "Paused (tab hidden)": "Pausado (aba oculta)",
@@ -784,6 +820,24 @@ const I18N = {
   },
 
   ja: {
+    // Translation sweep: strings that stayed in English
+    "More": "その他",
+    "Mode": "モード",
+    "Targets, comma separated": "ターゲット（カンマ区切り）",
+    "Resource requested on each host. Small is what matters — a 404 answers just as well as a 200.": "各ホストに要求するリソースです。小さいことが大事で、404 でも 200 と同じように応答になります。",
+    "The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.": "ホストへの最初のリクエストは DNS と 2 つのハンドシェイクの分を含むため、安定時の 3〜5 倍の値になります。オンでは接続を開くために送信し、記録しません。オフでは残して「コールド」と表示しますが、統計には含めません。",
+    "Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.": "ブラウザは非表示タブのタイマーを約 1 秒に制限するため、そこで取った値はネットワークではなくその制限を測ることになります。",
+    "Per-target results": "ターゲット別の結果",
+    "Waiting for the first round trip…": "最初の往復を待っています…",
+    "Filter samples by target": "ターゲットでサンプルを絞り込む",
+    "Paste ping output": "ping の出力を貼り付け",
+    "Show the whole log": "ログ全体を表示",
+    "Chart of the log": "ログのグラフ",
+    "Connection phases": "接続のフェーズ",
+    "Minimum round trip in ms": "最小往復時間（ms）",
+    "Samples either side": "前後のサンプル数",
+    "Measure downlink and the STUN round trip now": "下り速度と STUN の往復時間を今すぐ測定",
+    "Seq": "連番",
     "This browser": "このブラウザ",
     "Every reading is taken by this browser": "すべての測定値はこのブラウザで取得されます",
     "Paused (tab hidden)": "一時停止（タブ非表示）",
@@ -1165,6 +1219,24 @@ const I18N = {
   },
 
   ru: {
+    // Translation sweep: strings that stayed in English
+    "More": "Ещё",
+    "Mode": "Режим",
+    "Targets, comma separated": "Цели через запятую",
+    "Resource requested on each host. Small is what matters — a 404 answers just as well as a 200.": "Ресурс, запрашиваемый у каждого хоста. Важно, чтобы он был маленьким: ответ 404 подходит не хуже, чем 200.",
+    "The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.": "Первый запрос к хосту включает DNS и оба рукопожатия, поэтому он в три–пять раз дольше установившегося значения. Если включено, он отправляется для открытия соединения и не записывается. Если выключено, он сохраняется и показывается с пометкой «холодный», но в статистику всё равно не входит.",
+    "Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.": "Браузеры ограничивают таймеры скрытой вкладки примерно одной секундой, поэтому замеры там показывают это ограничение, а не сеть.",
+    "Per-target results": "Результаты по целям",
+    "Waiting for the first round trip…": "Ожидание первого ответа…",
+    "Filter samples by target": "Фильтр замеров по цели",
+    "Paste ping output": "Вставить вывод ping",
+    "Show the whole log": "Показать весь лог",
+    "Chart of the log": "График лога",
+    "Connection phases": "Фазы соединения",
+    "Minimum round trip in ms": "Минимальное время отклика, мс",
+    "Samples either side": "Замеров с каждой стороны",
+    "Measure downlink and the STUN round trip now": "Измерить входящую скорость и отклик STUN сейчас",
+    "Seq": "№",
     "This browser": "Этот браузер",
     "Every reading is taken by this browser": "Каждое измерение делает этот браузер",
     "Paused (tab hidden)": "Пауза (вкладка скрыта)",
@@ -1591,10 +1663,37 @@ const ATTR_I18N = [
   ['aPaste', 'placeholder', '…or paste ping output here'],
   ['aLogScale', 'title', 'Log scale — use it when one target is far slower than the others'],
 ];
+// Labels on elements without an id (or shared by both modes), by selector.
+const ATTR_SEL_I18N = [
+  ['.modeseg', 'aria-label', 'Mode'],
+  ['#btnClear', 'aria-label', 'Clear'],
+  ['#btnMethod', 'aria-label', 'Method'],
+  ['#targetInput', 'aria-label', 'Targets, comma separated'],
+  ['#pathInput', 'title', 'Resource requested on each host. Small is what matters — a 404 answers just as well as a 200.'],
+  ['#pathInput', 'aria-label', 'Probe path'],
+  ['label.opt[data-opt="cold"]', 'title', 'The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.'],
+  ['label.opt[data-opt="hidden"]', 'title', 'Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.'],
+  ['section.tiles', 'aria-label', 'Summary'],
+  ['#cards, #aCards', 'aria-label', 'Per-target results'],
+  ['#chart', 'data-empty', 'Waiting for the first round trip…'],
+  ['#logFilter', 'aria-label', 'Filter samples by target'],
+  ['#aPaste', 'aria-label', 'Paste ping output'],
+  ['#aRangeClear', 'aria-label', 'Show the whole log'],
+  ['#aChart', 'aria-label', 'Chart of the log'],
+  ['#aFTarget', 'aria-label', 'Target'],
+  ['#aFStatus', 'aria-label', 'Status'],
+  ['#aFRtt', 'aria-label', 'Minimum round trip in ms'],
+  ['#aFAroundN', 'aria-label', 'Samples either side'],
+  ['#aDetailsClose, #btnMethodClose', 'aria-label', 'Close'],
+  ['#btnSpeed', 'title', 'Measure downlink and the STUN round trip now'],
+];
 function applyAttrI18n() {
   ATTR_I18N.forEach(([id, attr, key]) => {
     const el = document.getElementById(id);
     if (el) el.setAttribute(attr, t(key));
+  });
+  ATTR_SEL_I18N.forEach(([sel, attr, key]) => {
+    document.querySelectorAll(sel).forEach((el) => el.setAttribute(attr, t(key)));
   });
 }
 

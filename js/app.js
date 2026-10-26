@@ -342,7 +342,7 @@ function renderCards() {
         <div><label>${t('Sent')}</label><b class="num">${s.sent}</b></div>
       </div>
       ${sparkline(pts, tg.color)}
-      ${last ? phaseBar(last) : ''}
+      ${last ? phaseBar(last, t('Connection phases')) : ''}
       ${s.cold != null ? `<p class="coldnote">${t('First request')}: ${ms(s.cold)} — ${t('includes DNS and the TLS handshake, excluded from the numbers above.')}</p>` : ''}
     </article>`;
   }).join('');
@@ -727,6 +727,9 @@ function init() {
   $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
   state.targets = parseTargets();
   document.body.dataset.mode = 'live';
+  setRunUI(false);
+  // This module can run before i18n.js applies its attributes; the first paint needs the text now.
+  $('chart').dataset.empty = t('Waiting for the first round trip…');
   renderFresh();
   paint();
   renderConnection();

@@ -187,7 +187,7 @@ export function drawChart(canvas, series, { log = false } = {}) {
 /** Stacked phase bar: DNS | TCP | TLS | TTFB | transfer for one sample.
     Only drawn when Timing-Allow-Origin actually gave us the split — the point
     of the component is that it cannot be faked from a single total. */
-export function phaseBar(sample) {
+export function phaseBar(sample, label = 'connection phases') {
   if (!sample || !sample.detail) return '';
   const parts = [
     ['dns', sample.dns, '#38bdf8'],
@@ -197,7 +197,7 @@ export function phaseBar(sample) {
     ['xfer', sample.transfer, '#34d399'],
   ].filter(([, v]) => v > 0.05);
   const total = parts.reduce((a, [, v]) => a + v, 0) || 1;
-  return '<div class="phasebar" role="img" aria-label="connection phases">'
+  return '<div class="phasebar" role="img" aria-label="' + label + '">'
     + parts.map(([k, v, c]) =>
       `<span class="ph" style="width:${((v / total) * 100).toFixed(2)}%;background:${c}" title="${k} ${v.toFixed(1)} ms"></span>`).join('')
     + '</div>';

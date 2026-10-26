@@ -98,11 +98,11 @@
       <input type="text" id="pathInput" class="input path" value="/favicon.ico"
              title="Resource requested on each host. Small is what matters — a 404 answers just as well as a 200."
              aria-label="Probe path" />
-      <label class="opt" title="The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.">
+      <label class="opt" data-opt="cold" title="The first request to a host pays DNS and both handshakes, so it reads three to five times the steady state. On, it is sent to open the connection and then not recorded at all. Off, it is kept and shown, flagged cold, and still left out of the statistics.">
         <input type="checkbox" id="optDropCold" checked />
         <span data-i18n>Drop the first request</span>
       </label>
-      <label class="opt" title="Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.">
+      <label class="opt" data-opt="hidden" title="Browsers clamp timers in a hidden tab to roughly one second, so readings taken there measure the throttle rather than the network.">
         <input type="checkbox" id="optHidden" />
         <span data-i18n>Run in background tabs</span>
       </label>
@@ -198,7 +198,7 @@
         <span class="cfield filetag"><i data-i18n>File</i> <b id="aFile">—</b> <small class="muted" id="aFileMeta"></small></span>
         <label class="slabel" for="aFormat" data-i18n>Format</label>
         <select class="cs-btn cs-select" id="aFormat" title="Detected automatically; force a format if the guess is wrong">
-          <option value="">Auto</option>
+          <option value="" data-i18n>Auto</option>
           <option value="linux">Linux (iputils)</option>
           <option value="busybox">BusyBox</option>
           <option value="bsd">macOS / BSD</option>
@@ -285,7 +285,7 @@
               <span class="c-time" data-i18n>Time</span>
               <span class="c-tgt" data-i18n>Target</span>
               <span class="c-from" data-i18n>Responder</span>
-              <span class="c-seq">Seq</span>
+              <span class="c-seq" data-i18n>Seq</span>
               <span class="c-ttl">TTL</span>
               <span class="c-rtt">RTT</span>
               <span class="c-st" data-i18n>Status</span>
