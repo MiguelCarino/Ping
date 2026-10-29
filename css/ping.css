@@ -477,8 +477,3 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
   .pane-head h2{font-size:.72rem;}
 }
 
-/* ---- source line ----
-   The one-line .data-foot (carino-ui.css) closes both screens. It never
-   grows, so the panes above keep the height they had. */
-.app>.data-foot{flex-shrink:0;padding:6px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-@media (max-width:640px){.app>.data-foot{white-space:normal;}}
