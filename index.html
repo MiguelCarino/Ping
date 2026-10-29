@@ -27,11 +27,62 @@
   <script type="application/json" id="carino-head-i18n">{"es": {"title": "Prueba de ping: latencia, jitter y análisis de logs | Carino", "desc": "Mide latencia y analiza logs de ping: ida y vuelta, jitter, pérdida de paquetes y desglose DNS/TLS/TTFB, o lee una salida de ping guardada. Nada sale de aquí."}, "pt-BR": {"title": "Teste de ping online — latência, jitter e análise de log | Carino", "desc": "Meça latência e analise logs de ping: ida e volta, jitter, perda de pacotes e divisão DNS/TLS/TTFB, ou leia uma saída de ping salva. Nada sai da página."}, "ja": {"title": "Pingテスト・遅延/ジッター・ログ解析 | Carino", "desc": "ブラウザで遅延を測定しpingログを解析。往復時間、ジッター、パケットロス、DNS/TLS/TTFBの内訳、保存したping出力も読み込み。外部送信なし。"}, "ru": {"title": "Пинг-тест онлайн — задержка, джиттер и анализ логов | Carino", "desc": "Замер задержки и анализ логов ping: время отклика, джиттер, потери пакетов, разбивка DNS/TLS/TTFB или разбор сохранённого вывода ping. Всё остаётся на странице."}}</script>
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebApplication", "name": "Ping", "url": "https://ping.carino.systems/", "description": "Client-side latency measurement and ping log analysis: round trip, jitter, packet loss and the DNS/TLS/TTFB split from your browser, or any saved ping output read in the tab. Nothing leaves the page.", "operatingSystem": "Any (runs in a web browser)", "isAccessibleForFree": true, "author": {"@type": "Person", "name": "Miguel Cariño", "url": "https://carino.systems/"}}</script>
   <!-- /carino:head -->
-  <meta name="theme-color" content="#050505" />
   <link rel="manifest" href="manifest.webmanifest" />
+  <!-- Theme before first paint, so neither theme flashes the other:
+       ?theme=gold|color (review links; not stored) > carino-theme cookie
+       (shared across *.carino.systems) > localStorage > Gold & Black. -->
+  <meta name="theme-color" content="#050505" id="carinoThemeColor">
+  <script>
+  (function () {
+    var d = document.documentElement, t = null;
+    function pick(v) { return v === 'gold' ? 'gold' : (v === 'color' || v === 'colour') ? 'color' : null; }
+    try { t = pick(new URLSearchParams(location.search).get('theme')); } catch (e) {}
+    if (!t) { try { var m = document.cookie.match(/(?:^|;\s*)carino-theme=([^;]*)/); if (m) t = pick(decodeURIComponent(m[1])); } catch (e) {} }
+    if (!t) { try { t = pick(localStorage.getItem('carino-theme')); } catch (e) {} }
+    t = t || 'gold';
+    d.setAttribute('data-carino-theme', t);
+    var dark = d.getAttribute('data-theme') !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+    var meta = document.getElementById('carinoThemeColor');
+    if (meta) meta.content = t === 'gold' ? '#050505' : (dark ? '#0e1420' : '#eef3fc');
+  })();
+  </script>
   <link rel="stylesheet" href="fonts/carino-fonts.css" />
   <link rel="stylesheet" href="carino-ui.css" />
   <link rel="stylesheet" href="css/ping.css" />
+  <!-- Colourful theme + the switch; nothing applies until data-carino-theme="color". -->
+  <link rel="stylesheet" href="carino-theme.css" />
+  <style>
+    /* Colourful: carino-theme.css remaps the tokens, so everything that reads
+       one follows (the charts read them at draw time and repaint on
+       carino:themechange); these are css/ping.css's values written for black.
+       Gold doubles as Ping's "warn" voice there (--accent-hi); here warn is
+       the theme's amber, so it does not read as a link. */
+    :root[data-carino-theme="color"]{--accent-hi:var(--warn);--border-hi:var(--border);}
+    :root[data-carino-theme="color"] .notice.warn,:root[data-carino-theme="color"] .verdict-badge[data-key="warn"]{border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 8%,transparent);}
+    :root[data-carino-theme="color"] .chip.basis[data-basis="estimated"]{border-color:color-mix(in srgb,var(--warn) 40%,transparent);}
+    :root[data-carino-theme="color"] ::-webkit-scrollbar-thumb{background:var(--ct-scroll);}
+    :root[data-carino-theme="color"] .cs-btn.primary.running{color:var(--ct-on-accent);}
+    :root[data-carino-theme="color"] .cs-btn.primary.running:hover{background:color-mix(in srgb,var(--err) 85%,var(--text));border-color:color-mix(in srgb,var(--err) 85%,var(--text));color:var(--ct-on-accent);}
+    :root[data-carino-theme="color"] .input,:root[data-carino-theme="color"] .rawlines{background:var(--bg-elev);}
+    :root[data-carino-theme="color"] .input::placeholder{color:var(--text-muted);}
+    :root[data-carino-theme="color"] .notice.err,:root[data-carino-theme="color"] .verdict-badge[data-key="bad"],:root[data-carino-theme="color"] .chip.bad,:root[data-carino-theme="color"] .chip.warn{color:var(--err);}
+    :root[data-carino-theme="color"] .notice.err,:root[data-carino-theme="color"] .stat-tile.bad,:root[data-carino-theme="color"] .verdict-badge[data-key="bad"],:root[data-carino-theme="color"] .chip.bad,:root[data-carino-theme="color"] .chip.warn{border-color:color-mix(in srgb,var(--err) 45%,transparent);}
+    :root[data-carino-theme="color"] .notice.err,:root[data-carino-theme="color"] .verdict-badge[data-key="bad"]{background:color-mix(in srgb,var(--err) 7%,transparent);}
+    :root[data-carino-theme="color"] .verdict-badge[data-key="good"],:root[data-carino-theme="color"] .chip.good,:root[data-carino-theme="color"] .chip.basis[data-basis="absolute"],
+    :root[data-carino-theme="color"] .pc-steps li[data-state="done"]::before{border-color:color-mix(in srgb,var(--ok) 45%,transparent);}
+    :root[data-carino-theme="color"] .verdict-badge[data-key="good"]{background:color-mix(in srgb,var(--ok) 9%,transparent);}
+    :root[data-carino-theme="color"] .phasebar,:root[data-carino-theme="color"] .pbar{background:var(--bg-elev);}
+    :root[data-carino-theme="color"] .lrow,:root[data-carino-theme="color"] .dlg-body table.cmp td{border-bottom-color:var(--border);}
+    :root[data-carino-theme="color"] .lrow:hover{background:var(--ct-hover);}
+    :root[data-carino-theme="color"] .lrow .cold,:root[data-carino-theme="color"] .arow .c-st.dupst{color:var(--info);}
+    :root[data-carino-theme="color"] .lrow .cold{border-color:color-mix(in srgb,var(--info) 40%,transparent);}
+    :root[data-carino-theme="color"] .dlg::backdrop{background:var(--ct-scrim);}
+    :root[data-carino-theme="color"] .dlg{box-shadow:var(--ct-shadow-3);}
+    :root[data-carino-theme="color"] .menu{background:var(--bg-card);box-shadow:var(--ct-shadow-3);}
+    :root[data-carino-theme="color"] .tip{background:var(--bg-card);box-shadow:var(--ct-shadow-2);}
+    :root[data-carino-theme="color"] .pcard{box-shadow:var(--ct-shadow-3);}
+    :root[data-carino-theme="color"] .busy,:root[data-carino-theme="color"] .dropover{background:color-mix(in srgb,var(--bg) 82%,transparent);}
+  </style>
 </head>
 <body>
   <!-- App controls; carino-navbar.js moves this into the shared navbar. -->
@@ -390,6 +441,7 @@
   </dialog>
 
   <script src="carino-navbar.js" data-app="Ping" defer></script>
+  <script src="carino-theme.js" data-mark="logo.svg" data-mark-color="logo-color.svg" defer></script>
   <script src="carino-lang.js" defer></script>
   <script src="i18n.js" defer></script>
   <script type="module" src="js/app.js"></script>

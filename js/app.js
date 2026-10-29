@@ -716,6 +716,12 @@ function init() {
   // Phone URL-bar show/hide changes the height without firing a resize in some
   // browsers; the visual viewport does report it.
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+  // The theme switch: the line colours are read from the theme, so take them
+  // again and repaint.
+  window.addEventListener('carino:themechange', () => {
+    state.targets.forEach((tg, i) => { tg.color = seriesColor(i); });
+    paint();
+  });
   window.addEventListener('carino:langchange', () => {
     setRunUI(state.running); renderConnection(); renderFresh();
     // i18n.js resets the static titles first; this one depends on the mode.

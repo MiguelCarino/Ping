@@ -26,7 +26,10 @@ function css(name, fallback) {
     the colour-vision check on adjacent pairs: sky next to violet did not
     (ΔE 5.2 deutan), pink between them does (worst pair 10.3). */
 export function seriesColor(i) {
-  const fixed = [css('--accent', '#eab308'), '#38bdf8', '#f472b6', '#a78bfa', '#34d399', '#fb923c'];
+  // Colourful defines --ct-* strokes that hold on white; Gold has none, so it
+  // keeps these near-black hues.
+  const fixed = [css('--accent', '#eab308'), css('--ct-blue', '#38bdf8'), css('--ct-pink', '#f472b6'),
+    css('--ct-purple', '#a78bfa'), css('--ct-green', '#34d399'), css('--ct-amber', '#fb923c')];
   return fixed[i % fixed.length];
 }
 
@@ -190,11 +193,11 @@ export function drawChart(canvas, series, { log = false } = {}) {
 export function phaseBar(sample, label = 'connection phases') {
   if (!sample || !sample.detail) return '';
   const parts = [
-    ['dns', sample.dns, '#38bdf8'],
-    ['tcp', Math.max(0, sample.tcp - sample.tls), '#a78bfa'],
-    ['tls', sample.tls, '#f472b6'],
+    ['dns', sample.dns, css('--ct-blue', '#38bdf8')],
+    ['tcp', Math.max(0, sample.tcp - sample.tls), css('--ct-purple', '#a78bfa')],
+    ['tls', sample.tls, css('--ct-pink', '#f472b6')],
     ['ttfb', sample.ttfb, css('--accent', '#eab308')],
-    ['xfer', sample.transfer, '#34d399'],
+    ['xfer', sample.transfer, css('--ct-green', '#34d399')],
   ].filter(([, v]) => v > 0.05);
   const total = parts.reduce((a, [, v]) => a + v, 0) || 1;
   return '<div class="phasebar" role="img" aria-label="' + label + '">'

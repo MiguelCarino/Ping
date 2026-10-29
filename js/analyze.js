@@ -1366,4 +1366,9 @@ export function init({ notice }) {
   window.addEventListener('resize', onResize);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
   window.addEventListener('carino:langchange', () => { if (A.res) { syncFilterUI(); render(); } });
+  window.addEventListener('carino:themechange', () => {
+    if (!A.res) return;
+    A.res.targets.forEach((tg, i) => { tg.color = seriesColor(i); });
+    render();
+  });
 }
