@@ -27,9 +27,10 @@ function css(name, fallback) {
     (ΔE 5.2 deutan), pink between them does (worst pair 10.3). */
 export function seriesColor(i) {
   // Colourful defines --ct-* strokes that hold on white; Gold has none, so it
-  // keeps these near-black hues.
-  const fixed = [css('--accent', '#eab308'), css('--ct-blue', '#38bdf8'), css('--ct-pink', '#f472b6'),
-    css('--ct-purple', '#a78bfa'), css('--ct-green', '#34d399'), css('--ct-amber', '#fb923c')];
+  // keeps these near-black hues. In Colourful the second series is pink, not a
+  // second blue next to --accent, and green sits last, away from the OK status.
+  const fixed = [css('--accent', '#eab308'), css('--ct-pink', '#38bdf8'), css('--ct-teal', '#f472b6'),
+    css('--ct-purple', '#a78bfa'), css('--ct-amber', '#34d399'), css('--ct-green', '#fb923c')];
   return fixed[i % fixed.length];
 }
 
