@@ -20,7 +20,12 @@
    moved up to the top of anything the report asks not to split (a table
    row, a chart, a heading with what follows it), and the dialog says so.
    The paper choice only places the lines: the report still sets no paper
-   size, for the reason report.js gives. */
+   size, for the reason report.js gives.
+
+   Download saves the same report as a file, PDF or HTML by the File switch
+   (carino-pdf.js): the document fileDocument() makes, which is the report at
+   the level shown with its own toolbar and script taken out. The PDF is laid
+   out on the paper chosen here, with the report's @page margins. */
 
 import { PAGE_MARGIN_MM } from './report.js';
 
@@ -46,7 +51,8 @@ function defaultPaper() {
   return region && LETTER_REGIONS.has(region.toUpperCase()) ? 'letter' : 'a4';
 }
 
-const pv = { html: '', build: null, paper: 'a4', level: '', seq: 0, back: null, bound: false, title: null };
+const pv = { html: '', build: null, paper: 'a4', level: '', seq: 0, back: null, bound: false, title: null,
+             name: '', busy: false, format: null };
 
 const pageWidthPx = () => Math.round(PAPER[pv.paper].w * MM) + 2 * GUTTER;
 
@@ -70,6 +76,24 @@ export function framedHtml(html, paper = 'a4') {
 @media print { .pv-break { display: none !important; } }
 </style>`;
   return html.includes('</head>') ? html.replace('</head>', `${css}</head>`) : css + html;
+}
+
+/** The report as a file: the level shown, set on <body>, and the report's
+    own Basic/Advanced toolbar and the script behind it taken out, so the
+    file stands alone and holds exactly the level that was on screen. Pure. */
+export function fileDocument(html, level = 'basic') {
+  const lvl = level === 'advanced' ? 'advanced' : 'basic';
+  return String(html)
+    .replace(/<div class="toolbar">[\s\S]*?class="print"[\s\S]*?<\/button>\s*<\/div>\s*/, '')
+    .replace(/<script>[\s\S]*?<\/script>\s*/g, '')
+    .replace(/<body data-level="[a-z]*">/, `<body data-level="${lvl}">`);
+}
+
+/** The PDF's paper: the size chosen here, the report's own @page margins. */
+export function pdfPage(paper = 'a4') {
+  const p = PAPER[paper] || PAPER.a4;
+  const { top, side } = PAGE_MARGIN_MM;
+  return { w: p.w, h: p.h, margin: [top, side, top, side] };
 }
 
 function status(text) { const el = $('pvStatus'); if (el) el.textContent = text || ''; }
@@ -150,10 +174,59 @@ function syncOptions() {
   document.querySelectorAll('#pvOpts [data-pv-paper]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pvPaper === pv.paper)));
 }
 
+/* ---- the file: PDF or HTML ----------------------------------------------- */
+
+const Pdf = () => window.CarinoPdf || null;
+
+/* The File PDF | HTML switch, made once and put just above the file name. */
+function formatSwitch() {
+  if (pv.format || !Pdf()) return pv.format;
+  pv.format = Pdf().formatSwitch({ onChange: showName });
+  $('pvName').before(pv.format.el);
+  return pv.format;
+}
+
+const fmt = () => (pv.format ? pv.format.get() : 'pdf');
+
+/* The file name and the Download label follow the switch. */
+function showName() {
+  const name = pv.name ? (Pdf() ? Pdf().fileName(pv.name, fmt()) : pv.name) : '';
+  $('pvName').textContent = name;
+  $('pvName').title = name;
+  const dl = $('pvDownload');
+  dl.textContent = Pdf() ? Pdf().label(fmt()) : t('Download PDF');
+  dl.hidden = !Pdf();
+}
+
+function setReady(ready) {
+  $('pvPrint').disabled = !ready;
+  $('pvDownload').disabled = !ready || pv.busy;
+}
+
+async function downloadIt() {
+  const lib = Pdf();
+  if (!lib || pv.busy || !pv.html) return;
+  const seq = pv.seq;
+  const format = fmt();
+  const html = fileDocument(pv.html, frameLevel());
+  pv.busy = true;
+  setReady(true);
+  if (format === 'pdf') status(t('Creating the PDF…'));
+  const r = await lib.download({
+    html, name: pv.name || 'Ping report', format,
+    page: pdfPage(pv.paper), producer: 'Carino Ping · ping.carino.systems',
+  });
+  pv.busy = false;
+  if (seq !== pv.seq) return;                 // closed or rebuilt meanwhile
+  setReady(true);
+  if (r.ok) markPages();
+  else status(t(format === 'pdf' ? 'Could not create the PDF.' : 'Could not create the HTML file.'));
+}
+
 function render() {
   const frame = $('pvFrame');
   const seq = ++pv.seq;
-  $('pvPrint').disabled = true;
+  setReady(false);
   status(t('Preparing the report…'));
   return new Promise((done) => {
     const shown = () => {
@@ -161,9 +234,8 @@ function render() {
       if (seq !== pv.seq) { done(); return; }
       let d = null;
       try { d = frame.contentDocument; } catch (e) { /* not readable */ }
-      const name = d ? d.title : '';
-      $('pvName').textContent = name;
-      $('pvName').title = name;
+      pv.name = d ? d.title : '';
+      showName();
       if (d) {
         // Focus moves into the frame on a click or after Print; Esc there
         // never reaches the dialog, so the frame passes it on.
@@ -178,7 +250,7 @@ function render() {
       fit();
       syncOptions();
       markPages();
-      $('pvPrint').disabled = false;
+      setReady(true);
       done();
     };
     frame.onload = shown;
@@ -269,10 +341,12 @@ function onClosed() {
   pv.html = '';
   pv.build = null;
   pv.level = '';
+  pv.name = '';
   restoreTitle();
   const frame = $('pvFrame');
   if (frame) { frame.onload = null; frame.removeAttribute('srcdoc'); frame.style.cssText = ''; }
   $('pvName').textContent = '';
+  setReady(false);
   status('');
   document.removeEventListener('keydown', onKey);
   document.removeEventListener('focusin', onFocusIn);
@@ -287,6 +361,7 @@ function bind() {
   const ov = $('dlgReport');
   $('pvClose').addEventListener('click', close);
   $('pvPrint').addEventListener('click', printIt);
+  $('pvDownload').addEventListener('click', downloadIt);
   ov.addEventListener('click', (e) => { if (e.target === ov) close(); });     // the backdrop
   $('pvOpts').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -298,7 +373,9 @@ function bind() {
   // The report is written in the page's language when it is built, so a
   // language change rebuilds it; a plain document can only re-mark its pages.
   window.addEventListener('carino:langchange', () => {
+    if (pv.format) pv.format.relabel();
     if (!isOpen()) return;
+    showName();
     if (!pv.build) { markPages(); return; }
     try { pv.html = pv.build(); } catch (e) { markPages(); return; }
     if (!pv.level) pv.level = frameLevel();
@@ -318,6 +395,10 @@ export function previewReport(report) {
   pv.build = build;
   pv.level = '';
   pv.paper = defaultPaper();
+  pv.name = '';
+  formatSwitch();
+  if (pv.format) pv.format.relabel();
+  showName();
   pv.back = document.activeElement;
   // The menu item closes with its menu; focus goes back to the button that opened it.
   if (pv.back && pv.back.closest && pv.back.closest('#exportMenu')) pv.back = $('btnExport') || pv.back;

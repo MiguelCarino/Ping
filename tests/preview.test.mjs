@@ -69,3 +69,35 @@ test('the report keeps its own level switch and print button for the frame to dr
   assert.match(html, /ping\.reportLevel/);
   assert.match(html, /\.toolbar \{ display: none; \}/, 'the toolbar never prints');
 });
+
+const { fileDocument, pdfPage } = await import('../js/preview.js');
+
+test('the saved file is the report at the level shown, without its toolbar or script', () => {
+  const html = logReport();
+  for (const level of ['basic', 'advanced']) {
+    const file = fileDocument(html, level);
+    assert.doesNotMatch(file, /<script/i, 'no script');
+    assert.doesNotMatch(file, /class="toolbar"/, 'no toolbar');
+    assert.doesNotMatch(file, /\son[a-z]+=/i, 'no event attributes');
+    assert.ok(file.includes('<body data-level="' + level + '">'), 'the level shown');
+    assert.ok(file.includes('<div class="sheet">'), 'the sheet is all there');
+    assert.ok(file.includes('<title>'), 'keeps its title');
+  }
+  assert.match(fileDocument(html, 'nonsense'), /<body data-level="basic">/, 'an unknown level is Basic');
+  // Only the toolbar, the script and the level differ from the report.
+  const strip = (s) => {
+    const a = s.indexOf('<div class="toolbar">');
+    const b = s.indexOf('</div>', s.indexOf('class="print"')) + '</div>'.length;
+    const c = s.indexOf('<script>'), d = s.indexOf('</script>') + '</script>'.length;
+    return (s.slice(0, a) + s.slice(b, c) + s.slice(d)).replace(/\n\n+/g, '\n');
+  };
+  const norm = (s) => s.replace(/\n\n+/g, '\n');
+  assert.equal(norm(fileDocument(html, 'basic')), strip(html));
+});
+
+test('the PDF is laid out on the paper chosen, with the report\'s @page margins', () => {
+  const m = [PAGE_MARGIN_MM.top, PAGE_MARGIN_MM.side, PAGE_MARGIN_MM.top, PAGE_MARGIN_MM.side];
+  assert.deepEqual(pdfPage('a4'), { w: 210, h: 297, margin: m });
+  assert.deepEqual(pdfPage('letter'), { w: 215.9, h: 279.4, margin: m });
+  assert.deepEqual(pdfPage('nonsense'), pdfPage('a4'));
+});

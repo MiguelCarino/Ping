@@ -427,6 +427,14 @@ const I18N = {
     "Paper": "Papel",
     "Letter": "Carta",
     "Where pages end is an estimate: the browser decides when it prints.": "Dónde termina cada página es una estimación: el navegador lo decide al imprimir.",
+    "Print": "Imprimir",
+    "Download PDF": "Descargar PDF",
+    "Download HTML": "Descargar HTML",
+    "Creating the PDF…": "Creando el PDF…",
+    "Could not create the PDF.": "No se pudo crear el PDF.",
+    "Could not create the HTML file.": "No se pudo crear el archivo HTML.",
+    "PDF": "PDF",
+    "HTML": "HTML",
   },
 
   'pt-BR': {
@@ -835,6 +843,14 @@ const I18N = {
     "Paper": "Papel",
     "Letter": "Carta",
     "Where pages end is an estimate: the browser decides when it prints.": "Onde cada página termina é uma estimativa: o navegador decide ao imprimir.",
+    "Print": "Imprimir",
+    "Download PDF": "Baixar PDF",
+    "Download HTML": "Baixar HTML",
+    "Creating the PDF…": "Criando o PDF…",
+    "Could not create the PDF.": "Não foi possível criar o PDF.",
+    "Could not create the HTML file.": "Não foi possível criar o arquivo HTML.",
+    "PDF": "PDF",
+    "HTML": "HTML",
   },
 
   ja: {
@@ -1243,6 +1259,14 @@ const I18N = {
     "Paper": "用紙",
     "Letter": "レター",
     "Where pages end is an estimate: the browser decides when it prints.": "ページの区切りは目安です。実際には印刷時にブラウザーが決めます。",
+    "Print": "印刷",
+    "Download PDF": "PDF をダウンロード",
+    "Download HTML": "HTML をダウンロード",
+    "Creating the PDF…": "PDF を作成しています…",
+    "Could not create the PDF.": "PDF を作成できませんでした。",
+    "Could not create the HTML file.": "HTML ファイルを作成できませんでした。",
+    "PDF": "PDF",
+    "HTML": "HTML",
   },
 
   ru: {
@@ -1651,6 +1675,14 @@ const I18N = {
     "Paper": "Бумага",
     "Letter": "Letter",
     "Where pages end is an estimate: the browser decides when it prints.": "Границы страниц приблизительные: браузер определяет их при печати.",
+    "Print": "Печать",
+    "Download PDF": "Скачать PDF",
+    "Download HTML": "Скачать HTML",
+    "Creating the PDF…": "Создаём PDF…",
+    "Could not create the PDF.": "Не удалось создать PDF.",
+    "Could not create the HTML file.": "Не удалось создать файл HTML.",
+    "PDF": "PDF",
+    "HTML": "HTML",
   },
 };
 

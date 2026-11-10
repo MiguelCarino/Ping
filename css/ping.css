@@ -235,8 +235,6 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .pvseg .seg-btn[aria-pressed="true"]{color:var(--accent);background:var(--accent-faint);}
 .pv-note{font-size:.66rem;color:var(--text-muted);line-height:1.4;}
 #pvStage{overflow:hidden;}
-#pvPrint{height:auto;padding:6px 10px;white-space:normal;}
-@media (min-width:701px){#pvPrint{min-height:36px;}}
 
 /* ---- modes ----
    One page, two screens. The navbar controls that only make sense for one of

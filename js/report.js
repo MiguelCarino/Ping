@@ -127,9 +127,13 @@ function styles() {
   .lbl { font-size: 10.5px; fill: #0f172a; }
 
   /* Phones: one column of facts, charts and wide tables scroll sideways
-     instead of shrinking to unreadable type. */
+     instead of shrinking to unreadable type. The width query sits inside
+     a plain "@media screen" block, not "screen and (…)": the PDF
+     (carino-pdf.js) lays the file out as printed by turning "@media screen"
+     into "not all", and "not all and (max-width: 640px)" is true at any
+     width, which drew the phone layout on paper. */
   .scroll { overflow-x: auto; }
-  @media screen and (max-width: 640px) {
+  @media screen { @media (max-width: 640px) {
     body { padding: 10px; }
     .sheet { padding: 20px 16px; }
     .meta { grid-template-columns: 1fr; }
@@ -139,7 +143,7 @@ function styles() {
     table.tgt th, table.tgt td { width: auto !important; }
     body[data-level="advanced"] table.tgt { min-width: 640px; }
     footer { flex-direction: column; }
-  }
+  } }
 
   @media print {
     body { background: #fff; padding: 0; }
