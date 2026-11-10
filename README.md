@@ -113,7 +113,7 @@ Exports carry the rows the table shows — sequence, timestamp in the log's own 
 
 **CSV / XLSX / ODS** carry the complete per-sample record, phase columns included. CSV needs no library; SheetJS is vendored and loaded only when one of those buttons is pressed.
 
-**Report** opens a standalone HTML document in a new tab with a Print / Save as PDF button — the same approach Topo takes, and for the same reason: turning HTML into a PDF is the browser's job, so there is no PDF library in this repo (dropping jsPDF removed ~900 kB of vendored script). It prints the *distribution*, not the log: summary, per-target min/average/p50/p95/max/jitter/loss, peaks and lows, unanswered probes, the connection, the client identifier and the method. A run at half-second intervals makes hundreds of rows an hour and nobody reads row 300 — that is what the spreadsheet exports are for, and the report says so.
+**Report** opens a preview first, as Topo does: the standalone HTML document itself, on a sheet at paper width with the report's margins and dashed lines where pages should end (an estimate for the Letter or A4 paper chosen there; the browser decides at print time), with the Basic/Advanced switch above it. **Print / Save as PDF** in the preview prints that very document; Close keeps nothing. The same approach Topo takes, and for the same reason: turning HTML into a PDF is the browser's job, so there is no PDF library in this repo (dropping jsPDF removed ~900 kB of vendored script). It prints the *distribution*, not the log: summary, per-target min/average/p50/p95/max/jitter/loss, peaks and lows, unanswered probes, the connection, the client identifier and the method. A run at half-second intervals makes hundreds of rows an hour and nobody reads row 300 — that is what the spreadsheet exports are for, and the report says so.
 
 The report draws its charts as inline SVG, so they survive email, printing and offline viewing: latency over time (each target's average per time slice, with its fastest-to-slowest band), the share of probes lost per slice, and in Advanced a spread per target (min–max, p50–p95, average). The colours are a darker step of the screen palette, checked for colour-vision separation against white paper. A **Basic / Advanced** switch at the top of the report picks the level of detail. Basic, the default, has the verdict, four headline numbers, the charts and a short per-target table. Advanced adds the full statistics, peaks and lows, unanswered probes, the log cross-check and the method. Printing prints whichever level is on screen, and the choice is remembered.
 
@@ -144,6 +144,7 @@ js/export.js   CSV native; SheetJS loaded from ./vendor on demand
 js/speed.js    downlink throughput, parallel streams, before the run
 js/client.js   client identifier, browser/platform, reverse DNS, what the OS publishes
 js/report.js   the standalone printable report (Topo's approach, no PDF lib)
+js/preview.js  the report preview dialog: the frame Print prints, page-end estimate
 js/parse.js    streamed decoding, format detection, columnar parsing — pure, no DOM
 js/parse-worker.js   one per load: reads the File, parses, keeps the text
 js/analyze.js  the Log file mode: filters, charts, virtual table, exports
@@ -155,7 +156,7 @@ carino-navbar.js · carino-clock.js · carino-lang.js   the shared fleet chrome
 
 SheetJS is fetched only when someone presses XLSX or ODS, so a page view that never exports a spreadsheet pays none of it.
 
-The parser has its own tests, with a fixture per format, language and encoding (`tests/fixtures/`): `node --test tests/parse.test.mjs`.
+The parser has its own tests, with a fixture per format, language and encoding (`tests/fixtures/`): `node --test tests/parse.test.mjs`. The report preview's frame wrapper is tested by `node --test tests/preview.test.mjs`.
 
 Five languages (en / es / pt-BR / ja / ru) through the fleet resolver, `carino-lang.js`; a pick on any Carino subdomain applies across the fleet. **The report is translated too** — every heading, column, verdict and the whole method paragraph, with the document's own `lang` attribute set to match. That is checked programmatically rather than by eye: a test walks every `t()` key reachable from the report and asserts it resolves in all four non-English locales.
 

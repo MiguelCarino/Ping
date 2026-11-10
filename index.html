@@ -398,6 +398,42 @@
     <div class="dlg-body" id="aDetailsBody"></div>
   </dialog>
 
+  <!-- The report as it will print, before it is printed (js/preview.js). The
+       fleet's report preview (carino-ui.css 18b): every control in the left
+       column, Print at its foot, the frame holding the very document Print
+       prints. The ✕ (or Esc, or a click on the backdrop) keeps nothing. -->
+  <div class="rpv-scrim" id="dlgReport" hidden>
+    <div class="rpv" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+      <aside class="rpv-side">
+        <div class="rpv-head">
+          <h2 class="rpv-title" id="pvTitle" data-i18n>Report preview</h2>
+          <button type="button" class="modal-x rpv-x" id="pvClose" title="Close" aria-label="Close">✕</button>
+        </div>
+        <p class="rpv-status" id="pvStatus" role="status" aria-live="polite"></p>
+        <div class="rpv-opts" id="pvOpts">
+          <fieldset class="pv-opt"><legend data-i18n>Detail</legend>
+            <span class="seg pvseg" role="group" id="pvLevel" aria-label="Detail">
+              <button type="button" class="cs-btn tiny seg-btn" data-pv-level="basic" aria-pressed="true" data-i18n>Basic</button>
+              <button type="button" class="cs-btn tiny seg-btn" data-pv-level="advanced" aria-pressed="false" data-i18n>Advanced</button>
+            </span>
+          </fieldset>
+          <fieldset class="pv-opt"><legend data-i18n>Paper</legend>
+            <span class="seg pvseg" role="group" id="pvPaper" aria-label="Paper">
+              <button type="button" class="cs-btn tiny seg-btn" data-pv-paper="letter" aria-pressed="false" data-i18n>Letter</button>
+              <button type="button" class="cs-btn tiny seg-btn" data-pv-paper="a4" aria-pressed="false">A4</button>
+            </span>
+          </fieldset>
+          <p class="pv-note" data-i18n>Where pages end is an estimate: the browser decides when it prints.</p>
+        </div>
+        <p class="rpv-name" id="pvName"></p>
+        <div class="rpv-actions">
+          <button type="button" class="cs-btn primary" id="pvPrint" disabled data-i18n>Print / Save as PDF</button>
+        </div>
+      </aside>
+      <div class="rpv-stage" id="pvStage"><iframe id="pvFrame" class="rpv-frame" title="Report preview"></iframe></div>
+    </div>
+  </div>
+
   <!-- The long explanation lives here so the app itself stays one screen. -->
   <dialog id="dlgMethod" class="dlg" aria-labelledby="dlgMethodTitle">
     <div class="dlg-head">

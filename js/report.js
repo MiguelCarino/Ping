@@ -2,8 +2,9 @@
 
    Two decisions inherited from topo.carino.systems, both deliberate:
 
-   1. The document is standalone HTML with its styles inline, opened in a new
-      tab with a Print button. Turning it into a PDF is the browser's job, which
+   1. The document is standalone HTML with its styles inline, shown first in
+      a preview dialog (js/preview.js) whose Print button prints that very
+      document. Turning it into a PDF is the browser's job, which
       is why there is no PDF library here — and why removing jsPDF took ~900 kB
       of vendored script out of this repo. The file survives being emailed,
       archived, or opened on a machine that has never heard of this tool.
@@ -26,6 +27,9 @@
 
 const A = '#eab308';
 
+/** The @page margins, shared with the preview so its sheet is the printed one. */
+export const PAGE_MARGIN_MM = { top: 16, side: 14 };
+
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -38,7 +42,7 @@ function styles() {
   /* Margins only, and deliberately no paper size: forcing A4 makes a Letter
      printer scale the page, and Carta is what most of this report's readers
      have loaded. */
-  @page { margin: 16mm 14mm; }
+  @page { margin: ${PAGE_MARGIN_MM.top}mm ${PAGE_MARGIN_MM.side}mm; }
   * { box-sizing: border-box; }
   body { margin: 0; padding: 24px; background: #f1f5f9; color: #0f172a;
          font: 13px/1.5 "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -664,16 +668,4 @@ function logReportHtml(model, t) {
   </footer>
 </div>`;
   return wrap(`${title} — ${src.file}`, body, t);
-}
-
-/** Open the report in a new tab, the way Topo does. */
-export function openReport(html, t = (x) => x) {
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const tab = window.open(url, '_blank');
-  if (!tab) {
-    URL.revokeObjectURL(url);
-    throw new Error(t('The report opens in a new tab — allow pop-ups for this site and try again.'));
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

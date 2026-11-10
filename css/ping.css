@@ -225,6 +225,19 @@ select.cs-select{-webkit-appearance:none;appearance:none;}
 .dlg-body table.cmp td.warn{color:var(--accent-hi);}
 .dlg-body table.cmp td.bad{color:var(--err);font-weight:700;}
 
+/* ---- report preview ----
+   The layout is the fleet's .rpv (carino-ui.css 18b). What stays here is
+   Ping's own: the segmented Detail / Paper switches filling the column, and a
+   stage that clips, because fit() scales the frame element down on a narrow
+   stage and the frame scrolls its own document. */
+.pv-opt .pvseg{display:flex;}
+.pvseg .seg-btn{flex:1;height:30px;}
+.pvseg .seg-btn[aria-pressed="true"]{color:var(--accent);background:var(--accent-faint);}
+.pv-note{font-size:.66rem;color:var(--text-muted);line-height:1.4;}
+#pvStage{overflow:hidden;}
+#pvPrint{height:auto;padding:6px 10px;white-space:normal;}
+@media (min-width:701px){#pvPrint{min-height:36px;}}
+
 /* ---- modes ----
    One page, two screens. The navbar controls that only make sense for one of
    them carry data-only and are hidden in the other. [hidden] is made absolute
@@ -248,7 +261,9 @@ body:not([data-mode="log"]) [data-only="log"]{display:none !important;}
 @keyframes pulse{50%{opacity:.25;}}
 @media (prefers-reduced-motion:reduce){.cs-btn.primary.running .rundot{animation:none;}}
 
-.menu{position:fixed;z-index:60;min-width:230px;padding:5px;border:1px solid var(--border-hi);border-radius:8px;
+/* Above the pinned navbar (z-index 2147483000): on a phone the Export button
+   sits in the navbar's More panel, which otherwise covers the menu's top item. */
+.menu{position:fixed;z-index:2147483001;min-width:230px;padding:5px;border:1px solid var(--border-hi);border-radius:8px;
   background:#0a0a0a;box-shadow:0 12px 32px rgba(0,0,0,.65);display:flex;flex-direction:column;}
 .menu .mi{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:7px 10px;border:0;
   border-radius:5px;background:transparent;color:var(--text);cursor:pointer;text-align:left;}

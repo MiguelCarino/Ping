@@ -17,7 +17,8 @@ import { drawChart, sparkline, seriesColor, phaseBar } from './viz.js';
 import { exportCSV, exportSheet } from './export.js';
 import { measureDownlink, fmtMbps } from './speed.js';
 import { environment, connectionLabel, reverseDNS } from './client.js';
-import { reportHtml, openReport } from './report.js';
+import { reportHtml } from './report.js';
+import { previewReport } from './preview.js';
 import * as analyze from './analyze.js';
 
 const $ = (id) => document.getElementById(id);
@@ -554,7 +555,7 @@ function buildReport() {
 function doReport() {
   if (mode === 'log') { analyze.report(); return; }
   if (!exportGuard()) return;
-  try { openReport(buildReport(), t); notice(''); }
+  try { previewReport(buildReport); notice(''); }
   catch (err) { notice(err.message, 'err'); }
 }
 

@@ -20,7 +20,8 @@
 import { Series, combine, verdict } from './stats.js';
 import { drawTimeChart, drawHistogram, drawLossBars, drawHeat, sparkline, seriesColor } from './viz.js';
 import { exportCSV, exportSheet } from './export.js';
-import { reportHtml, openReport } from './report.js';
+import { reportHtml } from './report.js';
+import { previewReport } from './preview.js';
 import { createEngine, sampleAt, STATUS, F_INFERRED, F_COLD } from './parse.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1226,7 +1227,8 @@ export function report() {
   const res = A.res;
   const chk = checkStats();
   try {
-    openReport(reportHtml({
+    // A builder, not the document, so a language change can rebuild it.
+    previewReport(() => reportHtml({
       summary: sum,
       targets: list.map((s) => s.snapshot()),
       extremes: colExtremes(v.visible, 5),
@@ -1248,7 +1250,7 @@ export function report() {
         range: A.range ? t('a selected time range, not the whole log') : '',
         checks: chk,
       },
-    }, t), t);
+    }, t));
     notify('');
   } catch (err) {
     notify(err.message, 'err');

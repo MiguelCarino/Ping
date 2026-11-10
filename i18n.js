@@ -418,6 +418,15 @@ const I18N = {
     "Share of probes that went unanswered in each slice of time, all targets together.": "Porcentaje de sondeos sin respuesta en cada tramo de tiempo, todos los destinos juntos.",
     "The thin line runs from the fastest to the slowest reply, the bar from the median (p50) to the 95th percentile (p95), and the dark tick is the average.": "La línea delgada va de la respuesta más rápida a la más lenta, la barra de la mediana (p50) al percentil 95 (p95), y la marca oscura es el promedio.",
     "Advanced (top of the page) adds the full statistics per target, the spread of each target, the peaks and lows, every gap in the replies and how the figures were measured.": "Avanzado (arriba de la página) agrega las estadísticas completas por destino, la dispersión de cada destino, los picos y mínimos, cada hueco en las respuestas y cómo se midieron las cifras.",
+    // Report preview (js/preview.js)
+    "Report preview": "Vista previa del informe",
+    "Preparing the report…": "Preparando el informe…",
+    "Page {n}": "Página {n}",
+    "1 page": "1 página",
+    "{n} pages": "{n} páginas",
+    "Paper": "Papel",
+    "Letter": "Carta",
+    "Where pages end is an estimate: the browser decides when it prints.": "Dónde termina cada página es una estimación: el navegador lo decide al imprimir.",
   },
 
   'pt-BR': {
@@ -817,6 +826,15 @@ const I18N = {
     "Share of probes that went unanswered in each slice of time, all targets together.": "Porcentagem de sondagens sem resposta em cada fatia de tempo, todos os destinos juntos.",
     "The thin line runs from the fastest to the slowest reply, the bar from the median (p50) to the 95th percentile (p95), and the dark tick is the average.": "A linha fina vai da resposta mais rápida à mais lenta, a barra da mediana (p50) ao percentil 95 (p95), e o traço escuro é a média.",
     "Advanced (top of the page) adds the full statistics per target, the spread of each target, the peaks and lows, every gap in the replies and how the figures were measured.": "Avançado (no topo da página) acrescenta as estatísticas completas por destino, a dispersão de cada destino, os picos e mínimos, cada falha nas respostas e como os números foram medidos.",
+    // Report preview (js/preview.js)
+    "Report preview": "Prévia do relatório",
+    "Preparing the report…": "Preparando o relatório…",
+    "Page {n}": "Página {n}",
+    "1 page": "1 página",
+    "{n} pages": "{n} páginas",
+    "Paper": "Papel",
+    "Letter": "Carta",
+    "Where pages end is an estimate: the browser decides when it prints.": "Onde cada página termina é uma estimativa: o navegador decide ao imprimir.",
   },
 
   ja: {
@@ -1216,6 +1234,15 @@ const I18N = {
     "Share of probes that went unanswered in each slice of time, all targets together.": "各時間区間で応答がなかったプローブの割合（全宛先の合計）。",
     "The thin line runs from the fastest to the slowest reply, the bar from the median (p50) to the 95th percentile (p95), and the dark tick is the average.": "細い線は最速から最遅の応答まで、バーは中央値 (p50) から 95 パーセンタイル (p95) まで、濃い目盛りは平均です。",
     "Advanced (top of the page) adds the full statistics per target, the spread of each target, the peaks and lows, every gap in the replies and how the figures were measured.": "「詳細」（ページ上部）に切り替えると、宛先ごとの全統計、ばらつき、ピークと最小値、応答の欠落すべて、測定方法が表示されます。",
+    // Report preview (js/preview.js)
+    "Report preview": "レポートのプレビュー",
+    "Preparing the report…": "レポートを準備しています…",
+    "Page {n}": "{n} ページ",
+    "1 page": "1 ページ",
+    "{n} pages": "{n} ページ",
+    "Paper": "用紙",
+    "Letter": "レター",
+    "Where pages end is an estimate: the browser decides when it prints.": "ページの区切りは目安です。実際には印刷時にブラウザーが決めます。",
   },
 
   ru: {
@@ -1615,6 +1642,15 @@ const I18N = {
     "Share of probes that went unanswered in each slice of time, all targets together.": "Доля проб без ответа в каждом отрезке времени, по всем целям вместе.",
     "The thin line runs from the fastest to the slowest reply, the bar from the median (p50) to the 95th percentile (p95), and the dark tick is the average.": "Тонкая линия — от самого быстрого до самого медленного ответа, полоса — от медианы (p50) до 95-го перцентиля (p95), тёмная отметка — среднее.",
     "Advanced (top of the page) adds the full statistics per target, the spread of each target, the peaks and lows, every gap in the replies and how the figures were measured.": "«Подробно» (вверху страницы) добавляет полную статистику по каждой цели, разброс, пики и минимумы, все пропуски в ответах и то, как получены цифры.",
+    // Report preview (js/preview.js)
+    "Report preview": "Предпросмотр отчёта",
+    "Preparing the report…": "Готовим отчёт…",
+    "Page {n}": "Страница {n}",
+    "1 page": "1 страница",
+    "{n} pages": "{n} стр.",
+    "Paper": "Бумага",
+    "Letter": "Letter",
+    "Where pages end is an estimate: the browser decides when it prints.": "Границы страниц приблизительные: браузер определяет их при печати.",
   },
 };
 
@@ -1684,8 +1720,12 @@ const ATTR_SEL_I18N = [
   ['#aFStatus', 'aria-label', 'Status'],
   ['#aFRtt', 'aria-label', 'Minimum round trip in ms'],
   ['#aFAroundN', 'aria-label', 'Samples either side'],
-  ['#aDetailsClose, #btnMethodClose', 'aria-label', 'Close'],
+  ['#aDetailsClose, #btnMethodClose, #pvClose', 'aria-label', 'Close'],
+  ['#pvClose', 'title', 'Close'],
   ['#btnSpeed', 'title', 'Measure downlink and the STUN round trip now'],
+  ['#pvLevel', 'aria-label', 'Detail'],
+  ['#pvPaper', 'aria-label', 'Paper'],
+  ['#pvFrame', 'title', 'Report preview'],
 ];
 function applyAttrI18n() {
   ATTR_I18N.forEach(([id, attr, key]) => {
