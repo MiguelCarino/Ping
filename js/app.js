@@ -12,6 +12,7 @@
    a 900 ms host and it degrades to back-to-back probes instead of lying. */
 
 import { probe, toURL, isMixedContent, stunProbe } from './probe.js';
+import { hostFromHash, withHostFirst } from './arrive.js';
 import { Series, combine, verdict, extremes, lossEvents } from './stats.js';
 import { drawChart, sparkline, seriesColor, phaseBar } from './viz.js';
 import { exportCSV, exportSheet } from './export.js';
@@ -732,6 +733,14 @@ function init() {
 
   $('stunHost').textContent = STUN_SERVER;
   $('intervalSel').title = `${t('Time between probes')} · ${t('gives up after')} ${timeoutFor(state.interval)} ms`;
+  // A host handed over by another Carino page (arrive.js): first in the
+  // targets, and off the address. Nothing is probed until Start is pressed.
+  const arrived = hostFromHash(location.hash);
+  if (arrived) {
+    $('targetInput').value = withHostFirst($('targetInput').value, arrived);
+    history.replaceState(history.state, '', location.pathname + location.search);
+    save();
+  }
   state.targets = parseTargets();
   document.body.dataset.mode = 'live';
   setRunUI(false);
